@@ -116,14 +116,13 @@ main() {
   echo "Version: ${version}"
   echo ""
 
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  trap 'rm -rf "${tmpdir}"' EXIT
+  INSTALL_TMPDIR="$(mktemp -d)"
+  trap 'rm -rf "${INSTALL_TMPDIR}"' EXIT
 
   for eco in "${ecosystems[@]}"; do
     local binary_name="${eco}-pkguard-${os}-${arch}"
     local download_url="${DOWNLOAD_BASE}/${version}/${binary_name}"
-    local dest="${tmpdir}/${eco}-pkguard"
+    local dest="${INSTALL_TMPDIR}/${eco}-pkguard"
 
     echo "Downloading ${binary_name} ..."
     if ! download "${download_url}" "${dest}"; then
