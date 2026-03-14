@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for your interest in contributing to the Corp Registry PKGuard project.
+Thank you for your interest in contributing to the PKGuard project.
 
 ## Prerequisites
 
