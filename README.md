@@ -158,7 +158,84 @@ Developer → npm/pip/mvn → Enterprise Registry → PKGuard → PyPI/npm/Maven
 - Go 1.26+ (only if building from source)
 - Docker (optional, for containerized deployment)
 
-### Option 1: Download Pre-Built Binary (Easiest)
+### Option 1: One-Click Installer (Recommended for Non-Developers)
+
+The fastest way to get started. The installer downloads the correct binary for your platform, installs it, configures your package manager, creates an autostart entry, and applies the best-practices security rules — all in one command.
+
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.ps1 | iex
+```
+
+**Install specific ecosystems only:**
+
+```bash
+# macOS / Linux — install only the npm and pypi proxies:
+curl -fsSL https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.sh | bash -s -- npm pypi
+
+# Windows — install only maven:
+& { irm https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.ps1 } maven
+```
+
+**What the installer does:**
+
+1. Downloads the correct binary for your OS and architecture.
+2. Copies it to `~/.pkguard/bin/<ecosystem>-pkguard`.
+3. Writes the best-practices config to `~/.pkguard/<ecosystem>-pkguard/config.yaml`.
+4. Configures your package manager (npm registry, pip index-url, Maven mirror).
+5. Creates an autostart entry (macOS LaunchAgent, Linux systemd user service, Windows Startup batch).
+
+**After installation — reconfiguring rules:**
+
+Edit the config file for the ecosystem you want to change:
+
+```bash
+# npm rules:
+nano ~/.pkguard/npm-pkguard/config.yaml
+
+# pypi rules:
+nano ~/.pkguard/pypi-pkguard/config.yaml
+
+# maven rules:
+nano ~/.pkguard/maven-pkguard/config.yaml
+```
+
+The service restarts automatically on reboot. To apply changes immediately, restart the proxy using the `-setup` flag or restart the service:
+
+```bash
+# macOS:
+launchctl unload ~/Library/LaunchAgents/com.pkguard.npm.plist
+launchctl load ~/Library/LaunchAgents/com.pkguard.npm.plist
+
+# Linux:
+systemctl --user restart pkguard-npm.service
+```
+
+**Uninstalling:**
+
+```bash
+~/.pkguard/bin/npm-pkguard -uninstall
+~/.pkguard/bin/pypi-pkguard -uninstall
+~/.pkguard/bin/maven-pkguard -uninstall
+```
+
+The uninstall command restores your original package manager configuration (npm registry, Maven settings.xml backup).
+
+**Using the `-setup` flag directly (if you already have the binary):**
+
+```bash
+./npm-pkguard -setup      # Install with best-practices config
+./npm-pkguard -uninstall   # Remove everything
+```
+
+### Option 2: Download Pre-Built Binary
 
 Pre-built binaries are available for every release on the [GitHub Releases](../../releases) page.
 
@@ -182,7 +259,7 @@ chmod +x npm-pkguard-linux-amd64
 
 Replace `<owner>` with the GitHub repository owner. On macOS use `darwin-arm64`, on Windows use `npm-pkguard-windows-amd64.exe`.
 
-### Option 2: Best Practices Config (Build from Source)
+### Option 3: Best Practices Config (Build from Source)
 
 Each ecosystem includes a `config-best-practices.yaml` — a production-ready policy file you can deploy immediately. These configs are curated with real-world supply chain attack data and sensible defaults:
 
@@ -207,7 +284,7 @@ npm install lodash  # Works (trusted)
 npm install event-stream  # Blocked (known malware)
 ```
 
-### Option 3: Build and Run (Default Config)
+### Option 4: Build and Run (Default Config)
 
 **PyPI** (port 18000):
 ```bash
@@ -247,7 +324,7 @@ cd maven-pkguard && go build -o bin/maven-pkguard . && ./bin/maven-pkguard -conf
 </settings>
 ```
 
-### Option 4: Docker
+### Option 5: Docker
 
 ```bash
 # Build
@@ -264,7 +341,7 @@ Or use the demo Compose setup:
 docker-compose -f docker-compose.demo.yml up -d
 ```
 
-### Option 5: Kubernetes
+### Option 6: Kubernetes
 
 ```bash
 kubectl apply -f k8s/npm-pkguard/

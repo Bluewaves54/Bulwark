@@ -63,6 +63,7 @@ C4Container
     ContainerDb(cache, "In-Process Cache", "sync.RWMutex + map + TTL", "Per-binary TTL cache. Keyed by request URL. TTL configurable; max_size_mb is reserved but not yet enforced.")
     Container(rule_engine, "Rule Engine (common/)", "Go module", "Shared: EvaluatePackage, EvaluateVersion, trusted packages, typosquatting, namespace protection, install scripts, velocity detection.")
     Container(config, "Config (common/)", "Go module", "Shared structs, validation, defaults. Loaded from YAML at startup.")
+    Container(installer, "Installer (common/installer)", "Go module", "Shared one-click setup and uninstall. Embedded best-practices config, package manager configuration, OS autostart entries.")
   }
 
   Rel(dev, pypi_proxy, "pip / pip3 / uv / poetry / pdm", "HTTP :18000")
@@ -94,7 +95,7 @@ C4Component
   title Component Diagram — pypi-pkguard binary
 
   Container_Boundary(pypi, "pypi-pkguard") {
-    Component(main, "main.go", "Go package main", "Entry point. Parses flags, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM.")
+    Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -config), loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM.")
     Component(server, "server.go — Server", "Go struct", "Registers HTTP routes on ServeMux. Holds references to config, HTTP client, cache, metrics, rule engine, logger.")
     Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handleExternal, handleProxy, handleHealth, handleReadyz, handleMetrics, handleGetLogLevel, handleSetLogLevel. Each handler follows the filter pipeline.")
     Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with reason). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with reason. 7. Rewrite and return filtered response.")
@@ -779,3 +780,70 @@ flowchart LR
     SAME --> OUT1["Upstream requests\ngo to PyPI directly\n(Topology A)"]
     SAME --> OUT2["Upstream requests\ngo to enterprise registry\n(Topology B)"]
 ```
+
+---
+
+## 19. One-Click Installer Architecture
+
+Each proxy binary embeds its `config-best-practices.yaml` via Go's `//go:embed` directive. The shared `common/installer` package provides platform-aware setup and uninstall logic.
+
+### Installer Flow
+
+```mermaid
+flowchart TD
+    A["User runs: binary -setup"] --> B["installer.Setup()"]
+    B --> C["os.UserHomeDir()"]
+    B --> D["os.Executable()"]
+    C --> E["SetupFiles()"]
+    D --> E
+    E --> F["Create ~/.pkguard/<ecosystem>/"]
+    E --> G["Write config.yaml\n(embedded best-practices)"]
+    E --> H["Copy binary to\n~/.pkguard/bin/"]
+    E --> I["writePkgMgrConfig()"]
+    E --> J["writeAutostartFile()"]
+    I --> K{"Ecosystem?"}
+    K -->|npm| L["Deferred to ActivateServices"]
+    K -->|pypi| M["Write pip.conf / pip.ini"]
+    K -->|maven| N["Write settings.xml\n(backup existing)"]
+    J --> O{"OS?"}
+    O -->|macOS| P["Write LaunchAgent plist"]
+    O -->|Linux| Q["Write systemd user service"]
+    O -->|Windows| R["Write Startup .bat"]
+    E --> S["ActivateServices()"]
+    S --> T["npm config set registry\n(if npm ecosystem)"]
+    S --> U{"OS?"}
+    U -->|macOS| V["launchctl load"]
+    U -->|Linux| W["systemctl --user enable"]
+    U -->|Windows| X["Print manual start instructions"]
+```
+
+### Installed File Layout
+
+```
+~/.pkguard/
+├── bin/
+│   ├── npm-pkguard          # (or .exe on Windows)
+│   ├── pypi-pkguard
+│   └── maven-pkguard
+├── npm-pkguard/
+│   └── config.yaml           # Editable rules config
+├── pypi-pkguard/
+│   └── config.yaml
+└── maven-pkguard/
+    └── config.yaml
+```
+
+### Platform-Specific Autostart
+
+| OS | Mechanism | File Location |
+|----|-----------|---------------|
+| macOS | LaunchAgent | `~/Library/LaunchAgents/com.pkguard.<eco>.plist` |
+| Linux | systemd user service | `~/.config/systemd/user/pkguard-<eco>.service` |
+| Windows | Startup batch file | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\pkguard-<eco>.bat` |
+
+### Design Decisions
+
+- **`//go:embed`** for config: the binary is self-contained; no need to download config separately.
+- **`goos` parameter** on all file-system functions: enables cross-platform unit testing without mocking `runtime.GOOS`.
+- **Separation of `SetupFiles` vs `ActivateServices`**: file-only operations are fully unit-testable with `t.TempDir()`; external commands (`launchctl`, `systemctl`, `npm`) are isolated with documented coverage exemptions.
+- **Maven backup/restore**: existing `settings.xml` is backed up to `settings.xml.pkguard-backup` on setup and restored on uninstall.

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"PKGuard/common/config"
+	"PKGuard/common/installer"
 )
 
 // roundTripperFunc adapts a function to the http.RoundTripper interface.
@@ -1248,5 +1250,90 @@ func TestCreateLoggerWithoutFilePathPyPI(t *testing.T) {
 	if f != nil {
 		f.Close()
 		t.Error("expected nil file when filePath is empty")
+	}
+}
+
+// main() is exempt from unit test coverage because it contains flag.Parse(),
+// os.Exit(), and os.Stdout references. The extracted newProxyInfo and
+// handleInstallMode functions below ARE tested.
+
+func TestDefaultConfigEmbed(t *testing.T) {
+	if len(defaultConfig) == 0 {
+		t.Fatal("defaultConfig embed is empty")
+	}
+	if !strings.Contains(string(defaultConfig), "server:") {
+		t.Error("defaultConfig should contain server: section")
+	}
+}
+
+func TestNewProxyInfo(t *testing.T) {
+	p := newProxyInfo()
+	if p.Ecosystem != "pypi" {
+		t.Errorf("Ecosystem = %s, want pypi", p.Ecosystem)
+	}
+	if p.BinaryName != "pypi-pkguard" {
+		t.Errorf("BinaryName = %s, want pypi-pkguard", p.BinaryName)
+	}
+	if p.Port != 18000 {
+		t.Errorf("Port = %d, want 18000", p.Port)
+	}
+	if len(p.ConfigData) == 0 {
+		t.Error("ConfigData should not be empty")
+	}
+}
+
+func TestHandleInstallModeNeither(t *testing.T) {
+	p := newProxyInfo()
+	stub := func(_ installer.ProxyInfo, _ io.Writer) error { return nil }
+	handled, err := handleInstallMode(false, false, p, io.Discard, stub, stub)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("expected handled=false")
+	}
+}
+
+func TestHandleInstallModeSetup(t *testing.T) {
+	p := newProxyInfo()
+	var called bool
+	stub := func(_ installer.ProxyInfo, _ io.Writer) error { called = true; return nil }
+	noop := func(_ installer.ProxyInfo, _ io.Writer) error { return nil }
+	handled, err := handleInstallMode(true, false, p, io.Discard, stub, noop)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("expected handled=true")
+	}
+	if !called {
+		t.Error("setup function not called")
+	}
+}
+
+func TestHandleInstallModeUninstall(t *testing.T) {
+	p := newProxyInfo()
+	var called bool
+	noop := func(_ installer.ProxyInfo, _ io.Writer) error { return nil }
+	stub := func(_ installer.ProxyInfo, _ io.Writer) error { called = true; return nil }
+	handled, err := handleInstallMode(false, true, p, io.Discard, noop, stub)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("expected handled=true")
+	}
+	if !called {
+		t.Error("uninstall function not called")
+	}
+}
+
+func TestHandleInstallModeError(t *testing.T) {
+	p := newProxyInfo()
+	fail := func(_ installer.ProxyInfo, _ io.Writer) error { return fmt.Errorf("test error") }
+	noop := func(_ installer.ProxyInfo, _ io.Writer) error { return nil }
+	_, err := handleInstallMode(true, false, p, io.Discard, fail, noop)
+	if err == nil {
+		t.Error("expected error")
 	}
 }

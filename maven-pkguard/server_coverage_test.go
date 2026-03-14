@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"PKGuard/common/config"
+	"PKGuard/common/installer"
 )
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -1025,5 +1026,157 @@ func TestCreateLoggerWithoutFilePathMaven(t *testing.T) {
 	if f != nil {
 		f.Close()
 		t.Error("expected nil file when filePath is empty")
+	}
+}
+
+// main() is exempt from unit test coverage because it contains flag.Parse(),
+// os.Exit(), and os.Stdout references. The extracted newProxyInfo and
+// handleInstallMode functions below ARE tested.
+
+func TestDefaultConfigEmbed(t *testing.T) {
+	if len(defaultConfig) == 0 {
+		t.Fatal("defaultConfig embed is empty")
+	}
+	if !strings.Contains(string(defaultConfig), "server:") {
+		t.Error("defaultConfig should contain server: section")
+	}
+}
+
+func TestNewProxyInfo(t *testing.T) {
+	p := newProxyInfo()
+	if p.Ecosystem != "maven" {
+		t.Errorf("Ecosystem = %s, want maven", p.Ecosystem)
+	}
+	if p.BinaryName != "maven-pkguard" {
+		t.Errorf("BinaryName = %s, want maven-pkguard", p.BinaryName)
+	}
+	if p.Port != 18002 {
+		t.Errorf("Port = %d, want 18002", p.Port)
+	}
+	if len(p.ConfigData) == 0 {
+		t.Error("ConfigData should not be empty")
+	}
+}
+
+func TestHandleInstallModeNeither(t *testing.T) {
+	p := newProxyInfo()
+	stub := func(_ installer.ProxyInfo, _ io.Writer) error { return nil }
+	handled, err := handleInstallMode(false, false, p, io.Discard, stub, stub)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("expected handled=false")
+	}
+}
+
+func TestHandleInstallModeSetup(t *testing.T) {
+	p := newProxyInfo()
+	var called bool
+	stub := func(_ installer.ProxyInfo, _ io.Writer) error { called = true; return nil }
+	noop := func(_ installer.ProxyInfo, _ io.Writer) error { return nil }
+	handled, err := handleInstallMode(true, false, p, io.Discard, stub, noop)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("expected handled=true")
+	}
+	if !called {
+		t.Error("setup function not called")
+	}
+}
+
+func TestHandleInstallModeUninstall(t *testing.T) {
+	p := newProxyInfo()
+	var called bool
+	noop := func(_ installer.ProxyInfo, _ io.Writer) error { return nil }
+	stub := func(_ installer.ProxyInfo, _ io.Writer) error { called = true; return nil }
+	handled, err := handleInstallMode(false, true, p, io.Discard, noop, stub)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("expected handled=true")
+	}
+	if !called {
+		t.Error("uninstall function not called")
+	}
+}
+
+func TestHandleInstallModeError(t *testing.T) {
+	p := newProxyInfo()
+	fail := func(_ installer.ProxyInfo, _ io.Writer) error { return fmt.Errorf("test error") }
+	noop := func(_ installer.ProxyInfo, _ io.Writer) error { return nil }
+	_, err := handleInstallMode(true, false, p, io.Discard, fail, noop)
+	if err == nil {
+		t.Error("expected error")
+	}
+}
+
+func TestParseMavenLastUpdated(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		zero  bool
+	}{
+		{"empty", "", true},
+		{"whitespace", "   ", true},
+		{"invalid", "not-a-timestamp", true},
+		{"valid", "20240115120000", false},
+		{"validWithSpaces", " 20240601083045 ", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseMavenLastUpdated(tc.input)
+			if tc.zero && !got.IsZero() {
+				t.Errorf("expected zero time for %q, got %v", tc.input, got)
+			}
+			if !tc.zero && got.IsZero() {
+				t.Errorf("expected non-zero time for %q", tc.input)
+			}
+		})
+	}
+}
+
+func TestFetchUpstreamLastModified(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		header     string
+		expectZero bool
+	}{
+		{"status404", 404, "", true},
+		{"status500", 500, "", true},
+		{"noHeader", 200, "", true},
+		{"rfc1123", 200, "Mon, 15 Jan 2024 12:00:00 GMT", false},
+		{"rfc1123z", 200, "Mon, 15 Jan 2024 12:00:00 +0000", false},
+		{"invalidFormat", 200, "January 15, 2024", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.header != "" {
+					w.Header().Set("Last-Modified", tc.header)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			defer upstream.Close()
+
+			srv := &Server{
+				cfg: &config.Config{
+					Upstream: config.UpstreamConfig{URL: upstream.URL},
+				},
+				upstream: upstream.Client(),
+				logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+			}
+			got := srv.fetchUpstreamLastModified("/test/path")
+			if tc.expectZero && !got.IsZero() {
+				t.Errorf("expected zero time, got %v", got)
+			}
+			if !tc.expectZero && got.IsZero() {
+				t.Error("expected non-zero time")
+			}
+		})
 	}
 }
