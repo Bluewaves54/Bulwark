@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests — ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - common
+          - pypi-pkguard
+          - npm-pkguard
+          - maven-pkguard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Run tests with coverage
+        working-directory: ${{ matrix.module }}
+        run: |
+          go test -count=1 -race -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | grep "^total:"
+
+      - name: Enforce ≥90% coverage
+        working-directory: ${{ matrix.module }}
+        run: |
+          total=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { if (t+0 < 90) { print "Coverage " t "% is below 90%"; exit 1 } }'
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.module }}
+          path: ${{ matrix.module }}/coverage.out
+
+  lint:
+    name: golangci-lint — ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - common
+          - pypi-pkguard
+          - npm-pkguard
+          - maven-pkguard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          install-mode: goinstall
+          working-directory: ${{ matrix.module }}
+
+  docker:
+    name: Docker build — ${{ matrix.proxy }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        proxy:
+          - pypi-pkguard
+          - npm-pkguard
+          - maven-pkguard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -f ${{ matrix.proxy }}/Dockerfile \
+            -t pkguard-${{ matrix.proxy }}:${{ github.sha }} .
+
+  e2e-live:
+    name: Live E2E tests (Topology A)
+    runs-on: ubuntu-latest
+    # Only run on pushes to main; use if condition to skip on PRs from forks.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Build proxy modules (needed by e2e TestMain)
+        run: |
+          (cd common && go mod download)
+          (cd pypi-pkguard && go mod download)
+          (cd npm-pkguard && go mod download)
+          (cd maven-pkguard && go mod download)
+          (cd e2e && go mod download)
+
+      - name: Run live e2e tests
+        working-directory: e2e
+        env:
+          PKGUARD_E2E_LIVE: "true"
+        run: |
+          go test -v -tags=e2e -timeout=5m ./...
+
+  e2e-docker:
+    name: Docker E2E tests
+    runs-on: ubuntu-latest
+    needs: [test, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run Docker E2E tests (Python)
+        working-directory: e2e/docker
+        run: bash run.sh --python-only --cleanup-all
+
+      - name: Run Docker E2E tests (Node)
+        working-directory: e2e/docker
+        run: bash run.sh --node-only --cleanup-all
+
+      - name: Run Docker E2E tests (Java)
+        working-directory: e2e/docker
+        run: bash run.sh --java-only --cleanup-all

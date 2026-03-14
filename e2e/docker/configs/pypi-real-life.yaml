@@ -1,0 +1,59 @@
+# PyPI PKGuard — real-life production-like configuration.
+#
+# Simulates a realistic enterprise policy with multiple rules active:
+#   - Trusted core Python tooling (setuptools, pip, wheel) bypasses all rules
+#   - 7-day minimum package age
+#   - Pre-release versions blocked
+#   - Known typosquat package (python3-dateutil) explicitly denied
+#   - Dev/alpha/beta version patterns denied
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 60
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://pypi.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 300
+  max_size_mb: 256
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  fail_mode: "open"
+
+  trusted_packages:
+    - "setuptools"
+    - "pip"
+    - "wheel"
+
+  defaults:
+    min_package_age_days: 7
+    block_pre_releases: true
+
+  rules:
+    - name: "block-typosquat-dateutil"
+      package_patterns:
+        - "python3-dateutil"
+      action: "deny"
+      reason: "python3-dateutil is a known typosquat of python-dateutil"
+
+  version_patterns:
+    - name: "block-dev-alpha-beta"
+      match: "(?i)\\.dev\\d|a\\d+$|b\\d+$"
+      action: "deny"
+      reason: "dev, alpha, and beta builds are not permitted in production"

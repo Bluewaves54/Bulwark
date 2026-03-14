@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Port-mapping overlay for ad-hoc manual testing from the host.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.adhoc.yml up -d
+
+services:
+  # ─── PyPI proxies ──────────────────────────────────────────────────────────
+  pypi-proxy:
+    ports: ["19000:8080"]
+  pypi-proxy-age-block:
+    ports: ["19001:8080"]
+  pypi-proxy-age-pinned:
+    ports: ["19002:8080"]
+  pypi-proxy-block-prerelease:
+    ports: ["19003:8080"]
+  pypi-proxy-explicit-deny:
+    ports: ["19004:8080"]
+  pypi-proxy-global-defaults:
+    ports: ["19005:8080"]
+  pypi-proxy-version-pattern:
+    ports: ["19006:8080"]
+  pypi-proxy-real-life:
+    ports: ["19007:8080"]
+
+  # ─── npm proxies ───────────────────────────────────────────────────────────
+  npm-proxy:
+    ports: ["19100:8080"]
+  npm-proxy-age-block:
+    ports: ["19101:8080"]
+  npm-proxy-age-pinned:
+    ports: ["19102:8080"]
+  npm-proxy-block-prerelease:
+    ports: ["19103:8080"]
+  npm-proxy-explicit-deny:
+    ports: ["19104:8080"]
+  npm-proxy-global-defaults:
+    ports: ["19105:8080"]
+  npm-proxy-version-pattern:
+    ports: ["19106:8080"]
+  npm-proxy-install-scripts:
+    ports: ["19107:8080"]
+  npm-proxy-trusted-packages:
+    ports: ["19108:8080"]
+  npm-proxy-real-life:
+    ports: ["19109:8080"]
+
+  # ─── Maven proxies ────────────────────────────────────────────────────────
+  maven-proxy:
+    ports: ["19200:8080"]
+  maven-proxy-age-block:
+    ports: ["19201:8080"]
+  maven-proxy-age-pinned:
+    ports: ["19202:8080"]
+  maven-proxy-block-snapshots:
+    ports: ["19203:8080"]
+  maven-proxy-block-prerelease:
+    ports: ["19204:8080"]
+  maven-proxy-explicit-deny:
+    ports: ["19205:8080"]
+  maven-proxy-global-defaults:
+    ports: ["19206:8080"]
+  maven-proxy-version-pattern:
+    ports: ["19207:8080"]
+  maven-proxy-real-life:
+    ports: ["19208:8080"]

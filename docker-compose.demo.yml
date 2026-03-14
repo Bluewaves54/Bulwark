@@ -1,0 +1,41 @@
+version: '3.9'
+
+services:
+  pkguard-npm:
+    build:
+      context: .
+      dockerfile: npm-pkguard/Dockerfile
+    ports:
+      - "18001:18001"
+    volumes:
+      - ./npm-pkguard/config-best-practices.yaml:/app/config.yaml:ro
+    environment:
+      - RUST_LOG=debug
+    networks:
+      - pkguard-demo
+
+  pkguard-pypi:
+    build:
+      context: .
+      dockerfile: pypi-pkguard/Dockerfile
+    ports:
+      - "18000:18000"
+    volumes:
+      - ./pypi-pkguard/config-best-practices.yaml:/app/config.yaml:ro
+    networks:
+      - pkguard-demo
+
+  pkguard-maven:
+    build:
+      context: .
+      dockerfile: maven-pkguard/Dockerfile
+    ports:
+      - "18002:18002"
+    volumes:
+      - ./maven-pkguard/config-best-practices.yaml:/app/config.yaml:ro
+    networks:
+      - pkguard-demo
+
+networks:
+  pkguard-demo:
+    driver: bridge

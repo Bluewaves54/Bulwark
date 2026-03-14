@@ -1,0 +1,36 @@
+# npm PKGuard — install_scripts deny.
+# Denies packages that declare postinstall/preinstall/install lifecycle scripts.
+# esbuild has a postinstall script; lodash does not.
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://registry.npmjs.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 120
+  max_size_mb: 128
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  install_scripts:
+    enabled: true
+    action: "deny"
+    reason: "packages with install scripts are not permitted"
+    allowed_with_scripts: []

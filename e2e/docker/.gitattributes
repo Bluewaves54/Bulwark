@@ -1,0 +1,3 @@
+# Ensure shell scripts in Docker containers use LF line endings.
+e2e/docker/clients/**/*.sh text eol=lf
+e2e/docker/run.sh text eol=lf

@@ -1,0 +1,65 @@
+# Maven PKGuard — real-life production-like configuration.
+#
+# Simulates a realistic enterprise policy with multiple rules active:
+#   - Trusted Apache Commons packages bypass all rules
+#   - 7-day minimum package age
+#   - Pre-release and snapshot versions blocked
+#   - Legacy junit:junit explicitly denied (force migration to JUnit 5)
+#   - Milestone/RC version patterns denied
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 60
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://repo1.maven.org/maven2"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 300
+  max_size_mb: 256
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  fail_mode: "open"
+
+  trusted_packages:
+    - "org/apache/commons:*"
+    - "commons-io:*"
+
+  defaults:
+    min_package_age_days: 7
+    block_pre_releases: true
+
+  rules:
+    - name: "block-legacy-junit4"
+      package_patterns:
+        - "junit:junit"
+      action: "deny"
+      reason: "junit:junit (JUnit 4) is deprecated; migrate to org.junit.jupiter (JUnit 5)"
+
+    - name: "block-all-snapshots"
+      package_patterns:
+        - "*"
+      block_snapshots: true
+      action: "deny"
+      reason: "SNAPSHOT versions are not permitted in production"
+
+  version_patterns:
+    - name: "block-milestone-rc"
+      match: "(?i)-M\\d+$|-RC\\d+$"
+      action: "deny"
+      reason: "milestone and release candidate builds are not permitted"

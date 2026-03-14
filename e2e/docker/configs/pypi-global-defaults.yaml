@@ -1,0 +1,38 @@
+# PyPI PKGuard — global defaults: block_pre_releases + min_package_age_days.
+# All packages without a specific rule hit the global defaults.
+# urllib3 has a specific bypass_age_filter rule so it still passes.
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://pypi.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 120
+  max_size_mb: 128
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  defaults:
+    block_pre_releases: true
+    min_package_age_days: 10000
+  rules:
+    - name: "bypass-age-for-urllib3"
+      package_patterns: ["urllib3"]
+      bypass_age_filter: true

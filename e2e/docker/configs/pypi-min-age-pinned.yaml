@@ -1,0 +1,34 @@
+# PyPI PKGuard - Docker e2e minimum-age with pinned allow config.
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://pypi.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 120
+  max_size_mb: 128
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  rules:
+    - name: "min-age-with-pinned-urllib3"
+      package_patterns: ["urllib3"]
+      min_package_age_days: 10000
+      pinned_versions: ["2.0.7"]

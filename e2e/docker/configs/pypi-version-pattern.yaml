@@ -1,0 +1,36 @@
+# PyPI PKGuard — version_patterns deny rule.
+# Denies any version matching the pre-release regex pattern.
+# This exercises the version_patterns rule engine path distinct from block_pre_release.
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://pypi.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 120
+  max_size_mb: 128
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  version_patterns:
+    - name: "deny-rc-versions"
+      match: "(?i)rc\\d|a\\d+$|b\\d+$|\\.dev\\d"
+      action: "deny"
+      reason: "pre-release version blocked by version pattern rule"

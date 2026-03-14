@@ -1,0 +1,45 @@
+# npm PKGuard — e2e trusted packages configuration.
+# Blocks install scripts globally but trusts @types/* scoped packages.
+# @types/node has no install scripts but this confirms trusted bypass works
+# for all rules (pre-release, age, etc.).
+
+server:
+  port: 18207
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://registry.npmjs.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 60
+  max_size_mb: 128
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  trusted_packages:
+    - "@types/*"
+  install_scripts:
+    enabled: true
+    action: "deny"
+    reason: "packages with install scripts are not permitted"
+    allowed_with_scripts: []
+  rules:
+    - name: "block-everything"
+      package_patterns: ["*"]
+      min_package_age_days: 10000
+      block_pre_release: true

@@ -1,0 +1,66 @@
+# npm PKGuard — real-life production-like configuration.
+#
+# Simulates a realistic enterprise policy with multiple rules active:
+#   - Trusted scoped packages (@types/*, @babel/*) bypass all rules
+#   - Install scripts blocked globally (except esbuild allowlisted)
+#   - 7-day minimum package age
+#   - Pre-release versions blocked
+#   - Known malicious package (event-stream) explicitly denied
+#   - Canary/nightly version patterns denied
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 60
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://registry.npmjs.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 300
+  max_size_mb: 256
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  fail_mode: "open"
+
+  trusted_packages:
+    - "@types/*"
+    - "@babel/*"
+
+  install_scripts:
+    enabled: true
+    action: "deny"
+    allowed_with_scripts:
+      - "esbuild"
+    reason: "packages with install scripts are blocked by enterprise policy"
+
+  defaults:
+    min_package_age_days: 7
+    block_pre_releases: true
+
+  rules:
+    - name: "block-malicious-event-stream"
+      package_patterns:
+        - "event-stream"
+      action: "deny"
+      reason: "event-stream is a known supply chain attack vector (CVE-2018-16396)"
+
+  version_patterns:
+    - name: "block-canary-nightly"
+      match: "-canary|-nightly"
+      action: "deny"
+      reason: "canary and nightly builds are not permitted in production"

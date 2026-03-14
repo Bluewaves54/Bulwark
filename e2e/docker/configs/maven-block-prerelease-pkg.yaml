@@ -1,0 +1,36 @@
+# Maven PKGuard — per-package block_pre_release rule.
+# Blocks pre-release versions of junit:junit (e.g. 4.13-beta-3); stable releases pass.
+# junit:junit:4.13-beta-3 is a known pre-release on Maven Central.
+# junit:junit:4.13.2 is a known stable release.
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://repo1.maven.org/maven2"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 120
+  max_size_mb: 128
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  rules:
+    - name: "block-pre-releases-junit"
+      package_patterns: ["junit:junit"]
+      block_pre_release: true

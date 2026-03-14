@@ -1,0 +1,35 @@
+# Maven PKGuard — version_patterns deny rule.
+# Denies any version matching milestone (-M\d) or release-candidate patterns.
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://repo1.maven.org/maven2"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 120
+  max_size_mb: 128
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  version_patterns:
+    - name: "deny-milestone-rc-versions"
+      match: "(?i)-M\\d+$|-RC\\d+$|-alpha|-beta"
+      action: "deny"
+      reason: "milestone and RC versions blocked by version pattern rule"

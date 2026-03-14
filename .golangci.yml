@@ -1,0 +1,45 @@
+# golangci-lint configuration for Corp Registry PKGuard.
+# Run: golangci-lint run ./...
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - gosimple
+    - ineffassign
+    - unused
+    - gocognit
+    - goconst
+    - misspell
+    - godot
+    - gofmt
+    - goimports
+
+linters-settings:
+  gocognit:
+    min-complexity: 15
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+  goimports:
+    local-prefixes: PKGuard
+
+issues:
+  exclude-rules:
+    # Table-driven test slices often have long string literals; relax goconst in tests.
+    - path: "_test\\.go"
+      linters:
+        - goconst
+    # godot: test function names in t.Run don't need to end with periods.
+    - path: "_test\\.go"
+      linters:
+        - godot
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maven-pkguard
+  labels:
+    app: maven-pkguard
+spec:
+  selector:
+    app: maven-pkguard
+  ports:
+    - name: http
+      port: 18002
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP

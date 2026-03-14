@@ -1,0 +1,35 @@
+# npm PKGuard — version_patterns deny rule.
+# Denies any version matching pre-release digit suffix patterns.
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://registry.npmjs.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 120
+  max_size_mb: 128
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  version_patterns:
+    - name: "deny-prerelease-pattern"
+      match: "-alpha|-beta|-rc\\."
+      action: "deny"
+      reason: "pre-release version blocked by version pattern rule"

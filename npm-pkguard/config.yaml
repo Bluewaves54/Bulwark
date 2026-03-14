@@ -1,0 +1,59 @@
+# npm PKGuard configuration
+
+server:
+  port: 18001
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://registry.npmjs.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 300
+  max_size_mb: 256 # reserved for future use; not yet enforced
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+
+policy:
+  dry_run: false
+  # fail_mode controls behaviour when package metadata cannot be parsed or
+  # filtered by the policy engine.
+  # "open"  (default) — passes the raw upstream response through with a warning.
+  # "closed"           — returns 502 Bad Gateway to block uninspected artefacts.
+  fail_mode: "open"
+
+  # trusted_packages lists package name glob patterns that bypass ALL rule
+  # evaluation. Use for well-known scoped packages maintained by trusted orgs.
+  # Supports trailing wildcard: "@types/*", "@angular/*".
+  trusted_packages: []
+
+  # install_scripts blocks npm packages that declare preinstall/install/postinstall
+  # lifecycle scripts. Trusted packages are exempt automatically.
+  install_scripts:
+    enabled: false
+    action: "deny"
+    allowed_with_scripts: []
+    reason: "packages with install scripts are blocked by policy"
+
+  rules:
+    - name: "block-pre-release"
+      action: "deny"
+      block_pre_release: true
+      reason: "pre-release versions are not permitted"
+
+    - name: "minimum-age"
+      action: "deny"
+      min_package_age_days: 7
+      reason: "package must be at least 7 days old"
