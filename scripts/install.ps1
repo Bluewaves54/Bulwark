@@ -72,7 +72,15 @@ function Main {
     Write-Host 'Fetching latest release version ...'
     $version = Get-LatestVersion
     if (-not $version) {
-        Write-Error 'Could not determine latest release version.'
+        Write-Error @"
+No release found for $Repo.
+
+This project distributes binaries via GitHub Releases.
+A maintainer must push a version tag (e.g. 'git tag v0.1.0 && git push origin v0.1.0')
+to trigger the release workflow before binaries are available for download.
+
+Check https://github.com/$Repo/releases for available versions.
+"@
         exit 1
     }
     Write-Host "Version: $version"

@@ -104,7 +104,12 @@ main() {
   local version
   version="$(get_latest_version)"
   if [[ -z "${version}" ]]; then
-    echo "Error: Could not determine latest release version." >&2
+    echo "Error: No release found for ${REPO}." >&2
+    echo "" >&2
+    echo "This project distributes binaries via GitHub Releases." >&2
+    echo "A maintainer must push a version tag (e.g. 'git tag v0.1.0 && git push origin v0.1.0')" >&2
+    echo "to trigger the release workflow before binaries are available for download." >&2
+    echo "" >&2
     echo "Check https://github.com/${REPO}/releases for available versions." >&2
     exit 1
   fi
