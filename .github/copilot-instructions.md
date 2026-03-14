@@ -4,6 +4,12 @@ This document defines the mandatory quality gates, conventions, and task-complet
 
 ---
 
+## 0. Git Safety Rule (Non-Negotiable)
+
+**NEVER run `git commit` or `git push` unless the user explicitly tells you to.** You may stage files (`git add`), create branches, switch branches, and reset — but committing and pushing require explicit user approval every time.
+
+---
+
 ## 1. Quality Gates (Non-Negotiable)
 
 ### 1.1 Unit Test Coverage
