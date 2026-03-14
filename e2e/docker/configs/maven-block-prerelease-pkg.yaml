@@ -1,4 +1,4 @@
-# Maven PKGuard — per-package block_pre_release rule.
+# Maven Bulwark — per-package block_pre_release rule.
 # Blocks pre-release versions of junit:junit (e.g. 4.13-beta-3); stable releases pass.
 # junit:junit:4.13-beta-3 is a known pre-release on Maven Central.
 # junit:junit:4.13.2 is a known stable release.

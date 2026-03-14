@@ -1,4 +1,4 @@
-# Maven PKGuard — e2e allow-all configuration.
+# Maven Bulwark — e2e allow-all configuration.
 # No blocking rules: all versions pass through.
 
 server:

@@ -1,0 +1,82 @@
+# PyPI Bulwark — Best Practices Configuration
+# Deploy this config on Friday and immediately protect your org.
+# Sensible defaults: blocks young packages (7 days), known malware, pre-releases.
+
+server:
+  port: 18000
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://pypi.org"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  allowed_external_hosts:
+    - "files.pythonhosted.org"
+    - "pypi.org"
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 300
+  max_size_mb: 256
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+  # file_path: "/var/log/bulwark/pypi.log"
+
+policy:
+  dry_run: false
+  fail_mode: "closed" # Block uninspected artifacts
+
+  trusted_packages:
+    - "pip"
+    - "setuptools"
+    - "wheel"
+    - "build"
+    - "numpy"
+    - "scipy"
+    - "pandas"
+    - "django"
+    - "flask"
+    - "requests"
+    - "pytest"
+    - "black"
+    - "pylint"
+    - "mypy"
+
+  rules:
+    - name: "block-pre-release"
+      action: "deny"
+      block_pre_release: true
+      reason: "Pre-release versions not permitted in production"
+
+    - name: "minimum-age-quarantine"
+      action: "deny"
+      min_package_age_days: 7
+      reason: "Package must be 7+ days old; quarantine prevents zero-day exploits"
+
+    - name: "block-known-malware"
+      action: "deny"
+      package_patterns:
+        # High-confidence malicious / compromised packages
+        - "python3-dateutil"      # known malicious typosquat campaign
+        - "jeIlyfish"             # known malicious typosquat campaign
+        - "colourama"             # known malicious typosquat campaign
+        - "ctx"                   # compromised package incident
+        - "phpass"                # compromised package incident
+        - "noblesse"              # 2021 — Discord token + credit card stealer
+        - "colourfool"            # 2023 — RAT (documented by Fortinet)
+        - "secretslib"            # 2022 — cryptominer via Kubernetes (Checkmarx)
+        - "culturestreak"         # 2023 — cryptominer targeting GitLab CI
+        - "chatgpt-python"        # 2023 — impersonation, stealer
+        - "pybmpipe"              # W4SP stealer campaign
+        - "discordcmd"            # Discord token stealer
+      reason: "Known malicious, compromised, or typosquatted package"

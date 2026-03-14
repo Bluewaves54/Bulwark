@@ -1,0 +1,79 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maven-bulwark
+  labels:
+    app: maven-bulwark
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: maven-bulwark
+  template:
+    metadata:
+      labels:
+        app: maven-bulwark
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: maven-bulwark
+          image: ghcr.io/Bulwark/maven-bulwark:latest
+          imagePullPolicy: IfNotPresent
+          args: ["-config", "/etc/bulwark/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 18002
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "18002"
+            - name: BULWARK_AUTH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: maven-bulwark-auth
+                  key: username
+                  optional: true
+            - name: BULWARK_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: maven-bulwark-auth
+                  key: password
+                  optional: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/bulwark
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: config
+          configMap:
+            name: maven-bulwark-config

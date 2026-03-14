@@ -1,4 +1,4 @@
-# Maven PKGuard — per-package block_snapshots rule.
+# Maven Bulwark — per-package block_snapshots rule.
 # Blocks SNAPSHOT versions of junit:junit; released versions pass.
 server:
   port: 8080

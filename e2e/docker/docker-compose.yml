@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Docker Compose for PKGuard e2e testing with real package manager clients.
+# Docker Compose for Bulwark e2e testing with real package manager clients.
 #
 # Usage:
 #   cd e2e/docker && docker compose up --build --abort-on-container-exit
@@ -16,251 +16,251 @@ services:
   pypi-proxy:
     build:
       context: ../..
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     volumes:
       - ./configs/pypi-allow-all.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   pypi-proxy-age-block:
     build:
       context: ../..
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     volumes:
       - ./configs/pypi-min-age-block.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   pypi-proxy-age-pinned:
     build:
       context: ../..
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     volumes:
       - ./configs/pypi-min-age-pinned.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-allow-all.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy-age-block:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-min-age-block.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy-age-pinned:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-min-age-pinned.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   maven-proxy:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-allow-all.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   maven-proxy-age-block:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-min-age-block.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   maven-proxy-age-pinned:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-min-age-pinned.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   # ─── PyPI rule-specific proxies ──────────────────────────────────────────────
 
   pypi-proxy-block-prerelease:
     build:
       context: ../..
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     volumes:
       - ./configs/pypi-block-prerelease-pkg.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   pypi-proxy-explicit-deny:
     build:
       context: ../..
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     volumes:
       - ./configs/pypi-explicit-deny.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   pypi-proxy-global-defaults:
     build:
       context: ../..
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     volumes:
       - ./configs/pypi-global-defaults.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   pypi-proxy-version-pattern:
     build:
       context: ../..
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     volumes:
       - ./configs/pypi-version-pattern.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   pypi-proxy-real-life:
     build:
       context: ../..
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     volumes:
       - ./configs/pypi-real-life.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   # ─── npm rule-specific proxies ───────────────────────────────────────────────
 
   npm-proxy-block-prerelease:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-block-prerelease-pkg.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy-explicit-deny:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-explicit-deny.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy-global-defaults:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-global-defaults.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy-version-pattern:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-version-pattern.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy-install-scripts:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-install-scripts.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy-trusted-packages:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-trusted-packages.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   npm-proxy-real-life:
     build:
       context: ../..
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     volumes:
       - ./configs/npm-real-life.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   # ─── Maven rule-specific proxies ─────────────────────────────────────────────
 
   maven-proxy-block-snapshots:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-block-snapshots-pkg.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   maven-proxy-block-prerelease:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-block-prerelease-pkg.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   maven-proxy-explicit-deny:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-explicit-deny.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   maven-proxy-global-defaults:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-global-defaults.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   maven-proxy-version-pattern:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-version-pattern.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   maven-proxy-real-life:
     build:
       context: ../..
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     volumes:
       - ./configs/maven-real-life.yaml:/config.yaml:ro
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   # ─── Client test runners ─────────────────────────────────────────────────────
 
@@ -294,7 +294,7 @@ services:
       - PYPI_VERSION_PATTERN_PROXY_URL=http://pypi-proxy-version-pattern:8080
       - PYPI_REAL_LIFE_PROXY_URL=http://pypi-proxy-real-life:8080
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   test-node:
     build:
@@ -332,7 +332,7 @@ services:
       - NPM_TRUSTED_PACKAGES_PROXY_URL=http://npm-proxy-trusted-packages:8080
       - NPM_REAL_LIFE_PROXY_URL=http://npm-proxy-real-life:8080
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
   test-java:
     build:
@@ -367,8 +367,8 @@ services:
       - MAVEN_VERSION_PATTERN_PROXY_URL=http://maven-proxy-version-pattern:8080
       - MAVEN_REAL_LIFE_PROXY_URL=http://maven-proxy-real-life:8080
     networks:
-      - pkguard-e2e
+      - bulwark-e2e
 
 networks:
-  pkguard-e2e:
+  bulwark-e2e:
     driver: bridge

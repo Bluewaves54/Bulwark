@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"PKGuard/common/config"
+	"Bulwark/common/config"
 )
 
 const (
@@ -159,7 +159,7 @@ func TestEnvOverrideAuthToken(t *testing.T) {
 	if err := os.WriteFile(path, []byte("upstream:\n  url: \"https://pypi.org\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PKGUARD_AUTH_TOKEN", "secret-token")
+	t.Setenv("BULWARK_AUTH_TOKEN", "secret-token")
 	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -175,8 +175,8 @@ func TestEnvOverrideAuthCredentials(t *testing.T) {
 	if err := os.WriteFile(path, []byte("upstream:\n  url: \"https://pypi.org\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PKGUARD_AUTH_USERNAME", "user1")
-	t.Setenv("PKGUARD_AUTH_PASSWORD", "pass1")
+	t.Setenv("BULWARK_AUTH_USERNAME", "user1")
+	t.Setenv("BULWARK_AUTH_PASSWORD", "pass1")
 	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

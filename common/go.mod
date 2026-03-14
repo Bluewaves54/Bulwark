@@ -1,4 +1,4 @@
-module PKGuard/common
+module Bulwark/common
 
 go 1.26
 

@@ -1,4 +1,4 @@
-# PyPI PKGuard — per-package block_pre_release rule.
+# PyPI Bulwark — per-package block_pre_release rule.
 # Blocks pre-release versions of packaging; stable versions pass.
 # packaging 26.0rc1 is a known pre-release; 24.2 is a known stable release.
 server:

@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for your interest in contributing to the PKGuard project.
+Thank you for your interest in contributing to the Bulwark project.
 
 ## Prerequisites
 

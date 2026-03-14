@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# E2E tests: real pip / pip3 / uv installs through the PyPI PKGuard.
+# E2E tests: real pip / pip3 / uv installs through the PyPI Bulwark.
 # Expects PYPI_PROXY_URL to be set (e.g. http://pypi-proxy:8080).
 #
 # Rule coverage:

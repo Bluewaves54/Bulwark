@@ -1,4 +1,4 @@
-# npm PKGuard — explicit deny rule (action: deny).
+# npm Bulwark — explicit deny rule (action: deny).
 # Completely denies all versions of ms; other packages pass.
 server:
   port: 8080

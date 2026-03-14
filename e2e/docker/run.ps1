@@ -24,7 +24,7 @@ if ($CleanupImages) { $argsList += "--cleanup-images" }
 if ($CleanupBuilderCache) { $argsList += "--cleanup-builder-cache" }
 
 Write-Host "============================================"
-Write-Host " PKGuard E2E Tests (Docker)"
+Write-Host " Bulwark E2E Tests (Docker)"
 Write-Host "============================================"
 Write-Host ""
 

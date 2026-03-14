@@ -1,12 +1,12 @@
 # Benchmarks
 
-This document records the Go benchmark results for the core filtering pipelines of the PKGuard. Benchmarks are the authoritative reference for evaluating whether a future change introduces measurable performance regression.
+This document records the Go benchmark results for the core filtering pipelines of the Bulwark. Benchmarks are the authoritative reference for evaluating whether a future change introduces measurable performance regression.
 
 ## How to Run
 
 ```bash
 # Run all benchmarks from the repository root
-for mod in common/rules pypi-pkguard npm-pkguard maven-pkguard; do
+for mod in common/rules pypi-bulwark npm-bulwark maven-bulwark; do
   (cd $mod && go test -run=^$ -bench=. -benchmem ./...)
 done
 ```
@@ -14,7 +14,7 @@ done
 To run a single module with a longer timer for more stable numbers:
 
 ```bash
-cd pypi-pkguard
+cd pypi-bulwark
 go test -run=^$ -bench=. -benchmem -benchtime=5s ./...
 ```
 
@@ -42,7 +42,7 @@ The rule engine performs zero allocations per evaluation — all decisions are s
 
 ---
 
-### PyPI JSON Filter (`pypi-pkguard`)
+### PyPI JSON Filter (`pypi-bulwark`)
 
 Includes JSON unmarshal + rule evaluation + JSON re-marshal for the `/pypi/<pkg>/json` endpoint.
 
@@ -56,7 +56,7 @@ Includes JSON unmarshal + rule evaluation + JSON re-marshal for the `/pypi/<pkg>
 
 ---
 
-### npm Packument Filter (`npm-pkguard`)
+### npm Packument Filter (`npm-bulwark`)
 
 Includes JSON unmarshal + rule evaluation + JSON re-marshal + tarball URL rewriting for the `/<pkg>` endpoint.
 
@@ -70,7 +70,7 @@ Includes JSON unmarshal + rule evaluation + JSON re-marshal + tarball URL rewrit
 
 ---
 
-### Maven Metadata Filter (`maven-pkguard`)
+### Maven Metadata Filter (`maven-bulwark`)
 
 Includes XML parse + rule evaluation + XML re-serialisation for the `maven-metadata.xml` endpoint.
 

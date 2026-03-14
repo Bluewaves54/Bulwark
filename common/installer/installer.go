@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package installer provides one-click setup and uninstall for PKGuard proxies.
+// Package installer provides one-click setup and uninstall for Bulwark proxies.
 // Each proxy binary embeds its best-practices config and calls Setup or Uninstall
 // to install, configure the package manager, and create OS autostart entries.
 package installer
@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	pkguardDir = ".pkguard"
+	bulwarkDir = ".bulwark"
 	binSubdir  = "bin"
 	dirPerm    = 0o755
 	cfgPerm    = 0o644
@@ -37,7 +37,7 @@ const (
 	EcosystemMaven = "maven"
 )
 
-// ProxyInfo describes a PKGuard proxy ecosystem for installation.
+// ProxyInfo describes a Bulwark proxy ecosystem for installation.
 type ProxyInfo struct {
 	// Ecosystem is the short name: "npm", "pypi", or "maven".
 	Ecosystem string
@@ -60,7 +60,7 @@ type Paths struct {
 
 // ResolvePaths computes installation paths relative to the given home directory.
 func ResolvePaths(p ProxyInfo, home, goos string) Paths {
-	base := filepath.Join(home, pkguardDir)
+	base := filepath.Join(home, bulwarkDir)
 	binName := p.BinaryName
 	if goos == OSWindows {
 		binName += ".exe"
@@ -81,7 +81,7 @@ func PipConfig(port int) string {
 	return fmt.Sprintf("[global]\nindex-url = http://localhost:%d/simple/\ntrusted-host = localhost\n", port)
 }
 
-// MavenSettingsXML returns a Maven settings.xml that mirrors central through PKGuard.
+// MavenSettingsXML returns a Maven settings.xml that mirrors central through Bulwark.
 func MavenSettingsXML(port int) string {
 	return fmt.Sprintf("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"+
 		"<settings xmlns=\"http://maven.apache.org/SETTINGS/1.0.0\"\n"+
@@ -90,7 +90,7 @@ func MavenSettingsXML(port int) string {
 		"                              http://maven.apache.org/xsd/settings-1.0.0.xsd\">\n"+
 		"  <mirrors>\n"+
 		"    <mirror>\n"+
-		"      <id>pkguard-maven</id>\n"+
+		"      <id>bulwark-maven</id>\n"+
 		"      <mirrorOf>central</mirrorOf>\n"+
 		"      <url>http://localhost:%d</url>\n"+
 		"    </mirror>\n"+
@@ -128,7 +128,7 @@ func LaunchdPlistXML(label, binary, config string) string {
 // SystemdUnitFile returns a systemd user service unit.
 func SystemdUnitFile(desc, binary, config string) string {
 	return fmt.Sprintf("[Unit]\n"+
-		"Description=PKGuard %s\n"+
+		"Description=Bulwark %s\n"+
 		"After=network.target\n"+
 		"\n"+
 		"[Service]\n"+
@@ -207,7 +207,7 @@ func writePkgMgrConfig(p ProxyInfo, home, goos string, out io.Writer) {
 		}
 		settingsPath := filepath.Join(m2Dir, "settings.xml")
 		if data, err := os.ReadFile(settingsPath); err == nil {
-			backup := settingsPath + ".pkguard-backup"
+			backup := settingsPath + ".bulwark-backup"
 			os.WriteFile(backup, data, cfgPerm) //nolint:errcheck // best-effort backup
 			fmt.Fprintf(out, "[ok] Existing settings.xml backed up to %s\n", backup)
 		}
@@ -242,11 +242,11 @@ func AutostartDir(goos, home string) string {
 func AutostartFileName(goos, ecosystem string) string {
 	switch goos {
 	case OSDarwin:
-		return fmt.Sprintf("com.pkguard.%s.plist", ecosystem)
+		return fmt.Sprintf("com.bulwark.%s.plist", ecosystem)
 	case OSLinux:
-		return fmt.Sprintf("pkguard-%s.service", ecosystem)
+		return fmt.Sprintf("bulwark-%s.service", ecosystem)
 	case OSWindows:
-		return fmt.Sprintf("pkguard-%s.bat", ecosystem)
+		return fmt.Sprintf("bulwark-%s.bat", ecosystem)
 	default:
 		return ""
 	}
@@ -256,7 +256,7 @@ func AutostartFileName(goos, ecosystem string) string {
 func AutostartContent(p ProxyInfo, paths Paths, goos string) string {
 	switch goos {
 	case OSDarwin:
-		label := fmt.Sprintf("com.pkguard.%s", p.Ecosystem)
+		label := fmt.Sprintf("com.bulwark.%s", p.Ecosystem)
 		return LaunchdPlistXML(label, paths.Binary, paths.Config)
 	case OSLinux:
 		return SystemdUnitFile(p.BinaryName, paths.Binary, paths.Config)
@@ -342,7 +342,7 @@ func UninstallFiles(p ProxyInfo, home, goos string, out io.Writer) error {
 	// Restore Maven settings from backup.
 	if p.Ecosystem == EcosystemMaven {
 		settingsPath := filepath.Join(home, ".m2", "settings.xml")
-		backup := settingsPath + ".pkguard-backup"
+		backup := settingsPath + ".bulwark-backup"
 		if data, err := os.ReadFile(backup); err == nil {
 			os.WriteFile(settingsPath, data, cfgPerm) //nolint:errcheck // best-effort restore
 			os.Remove(backup)                         //nolint:errcheck // best-effort cleanup
@@ -359,7 +359,7 @@ func UninstallFiles(p ProxyInfo, home, goos string, out io.Writer) error {
 	os.Remove(paths.Binary) //nolint:errcheck // may not exist
 	fmt.Fprintf(out, "[ok] Removed %s\n", paths.Binary)
 
-	fmt.Fprintf(out, "\n%s-pkguard has been uninstalled.\n", p.Ecosystem)
+	fmt.Fprintf(out, "\n%s-bulwark has been uninstalled.\n", p.Ecosystem)
 	return nil
 }
 
@@ -430,11 +430,11 @@ func ActivateServices(p ProxyInfo, home, goos string, out io.Writer) {
 
 	switch goos {
 	case OSDarwin:
-		label := fmt.Sprintf("com.pkguard.%s", p.Ecosystem)
+		label := fmt.Sprintf("com.bulwark.%s", p.Ecosystem)
 		plistPath := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
 		activateLaunchd(plistPath, out)
 	case OSLinux:
-		unitName := fmt.Sprintf("pkguard-%s.service", p.Ecosystem)
+		unitName := fmt.Sprintf("bulwark-%s.service", p.Ecosystem)
 		activateSystemd(unitName, out)
 	case OSWindows:
 		paths := ResolvePaths(p, home, goos)
@@ -451,11 +451,11 @@ func DeactivateServices(p ProxyInfo, home, goos string, out io.Writer) {
 
 	switch goos {
 	case OSDarwin:
-		label := fmt.Sprintf("com.pkguard.%s", p.Ecosystem)
+		label := fmt.Sprintf("com.bulwark.%s", p.Ecosystem)
 		plistPath := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
 		deactivateLaunchd(plistPath, out)
 	case OSLinux:
-		unitName := fmt.Sprintf("pkguard-%s.service", p.Ecosystem)
+		unitName := fmt.Sprintf("bulwark-%s.service", p.Ecosystem)
 		deactivateSystemd(unitName, out)
 	}
 }
@@ -492,7 +492,7 @@ func Uninstall(p ProxyInfo, out io.Writer) error {
 
 // PrintPostSetup prints instructions after a successful setup.
 func PrintPostSetup(p ProxyInfo, paths Paths, out io.Writer) {
-	fmt.Fprintf(out, "\n=== %s-pkguard installed successfully ===\n\n", p.Ecosystem)
+	fmt.Fprintf(out, "\n=== %s-bulwark installed successfully ===\n\n", p.Ecosystem)
 	fmt.Fprintf(out, "Binary:  %s\n", paths.Binary)
 	fmt.Fprintf(out, "Config:  %s\n", paths.Config)
 	fmt.Fprintf(out, "Port:    %d\n\n", p.Port)
@@ -503,4 +503,44 @@ func PrintPostSetup(p ProxyInfo, paths Paths, out io.Writer) {
 	fmt.Fprintf(out, "  2. Restart the proxy (the service restarts automatically on reboot).\n\n")
 	fmt.Fprintf(out, "To uninstall:\n")
 	fmt.Fprintf(out, "  %s -uninstall\n", paths.Binary)
+}
+
+// InstalledConfigPath returns the standard config file path for a proxy
+// installation under the given home directory.
+func InstalledConfigPath(p ProxyInfo, home, goos string) string {
+	return ResolvePaths(p, home, goos).Config
+}
+
+// IsInstalledAt checks whether the proxy config exists at the standard
+// installation location under the given home directory.
+func IsInstalledAt(p ProxyInfo, home, goos string) bool {
+	_, err := os.Stat(InstalledConfigPath(p, home, goos))
+	return err == nil
+}
+
+// SetupFilesOnly installs files and configures the package manager but does not
+// activate autostart services (launchctl/systemd). The autostart entry is still
+// written so the proxy starts automatically on next login. Use this when the
+// calling process will continue running as the proxy.
+func SetupFilesOnly(p ProxyInfo, out io.Writer) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("finding home directory: %w", err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("finding executable: %w", err)
+	}
+	return SetupFilesOnlyAt(p, home, exe, runtime.GOOS, out)
+}
+
+// SetupFilesOnlyAt is the testable implementation of SetupFilesOnly.
+func SetupFilesOnlyAt(p ProxyInfo, home, exe, goos string, out io.Writer) error {
+	if err := SetupFiles(p, home, exe, goos, out); err != nil {
+		return err
+	}
+	if p.Ecosystem == EcosystemNpm {
+		activateNpm(p.Port, out)
+	}
+	return nil
 }

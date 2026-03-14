@@ -1,0 +1,52 @@
+# Maven Bulwark configuration
+
+server:
+  port: 18002
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+upstream:
+  url: "https://repo1.maven.org/maven2"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 300
+  max_size_mb: 256 # reserved for future use; not yet enforced
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+  # file_path: "/var/log/bulwark/maven.log"  # optional; logs also written to disk
+
+policy:
+  dry_run: false
+  # fail_mode controls behaviour when package metadata cannot be parsed or
+  # filtered by the policy engine.
+  # "open"  (default) — passes the raw upstream response through with a warning.
+  # "closed"           — returns 502 Bad Gateway to block uninspected artefacts.
+  fail_mode: "open"
+
+  # trusted_packages lists package name glob patterns that bypass ALL rule
+  # evaluation. Use for well-known packages maintained by trusted orgs.
+  # Maven uses groupId:artifactId format: "org.apache.commons:*", "junit:*".
+  trusted_packages: []
+
+  rules:
+    - name: "block-snapshots"
+      action: "deny"
+      block_snapshots: true
+      reason: "SNAPSHOT versions are not permitted"
+
+    - name: "block-pre-release"
+      action: "deny"
+      block_pre_release: true
+      reason: "pre-release versions are not permitted"

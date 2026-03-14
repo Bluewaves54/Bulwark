@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"PKGuard/common/config"
-	"PKGuard/common/rules"
+	"Bulwark/common/config"
+	"Bulwark/common/rules"
 )
 
 // benchPolicy is a representative policy used across all benchmarks.

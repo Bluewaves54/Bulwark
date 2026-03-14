@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# build-release.sh — Cross-compile PKGuard binaries for all supported platforms.
+# build-release.sh — Cross-compile Bulwark binaries for all supported platforms.
 #
 # Usage:
 #   ./scripts/build-release.sh              # build all platforms
@@ -17,7 +17,7 @@ set -euo pipefail
 
 VERSION="${1:-dev}"
 DIST_DIR="dist"
-MODULES=(npm-pkguard pypi-pkguard maven-pkguard)
+MODULES=(npm-bulwark pypi-bulwark maven-bulwark)
 CONFIGS=(config.yaml config-best-practices.yaml)
 
 # OS/arch matrix
@@ -35,7 +35,7 @@ LDFLAGS="-s -w -X main.version=${VERSION}"
 rm -rf "${DIST_DIR}"
 mkdir -p "${DIST_DIR}"
 
-echo "=== PKGuard Release Build ==="
+echo "=== Bulwark Release Build ==="
 echo "Version: ${VERSION}"
 echo "Output:  ${DIST_DIR}/"
 echo ""

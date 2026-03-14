@@ -1,4 +1,4 @@
-# npm PKGuard — e2e allow-all configuration.
+# npm Bulwark — e2e allow-all configuration.
 # No blocking rules: all versions pass through.
 
 server:

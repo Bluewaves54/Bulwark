@@ -122,8 +122,8 @@ func TestNpmAgeBlockFiltersAllVersionsLive(t *testing.T) {
 
 	// Body should contain a policy reason.
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "PKGuard") {
-		t.Error("expected 403 body to contain PKGuard policy reason")
+	if !strings.Contains(string(body), "Bulwark") {
+		t.Error("expected 403 body to contain Bulwark policy reason")
 	}
 }
 
@@ -228,7 +228,7 @@ func TestNpmTrustedPackageBypassesAllRulesLive(t *testing.T) {
 	assertStatus(t, resp2, 403)
 
 	body2, _ := io.ReadAll(resp2.Body)
-	if !strings.Contains(string(body2), "PKGuard") {
-		t.Error("expected 403 body to contain PKGuard policy reason for untrusted ms")
+	if !strings.Contains(string(body2), "Bulwark") {
+		t.Error("expected 403 body to contain Bulwark policy reason for untrusted ms")
 	}
 }

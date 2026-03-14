@@ -32,10 +32,10 @@ var (
 
 // TestMain builds all proxy binaries, starts allow-all proxy instances, runs the
 // test suite, then terminates the proxies.
-// The entire suite is skipped when PKGUARD_E2E_LIVE is not "true".
+// The entire suite is skipped when BULWARK_E2E_LIVE is not "true".
 func TestMain(m *testing.M) {
-	if os.Getenv("PKGUARD_E2E_LIVE") != "true" {
-		fmt.Fprintln(os.Stderr, "e2e: skipping — set PKGUARD_E2E_LIVE=true to run live tests")
+	if os.Getenv("BULWARK_E2E_LIVE") != "true" {
+		fmt.Fprintln(os.Stderr, "e2e: skipping — set BULWARK_E2E_LIVE=true to run live tests")
 		os.Exit(0)
 	}
 
@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 	repoRoot := filepath.Dir(wd)
 	cfgDir := filepath.Join(wd, "testdata", "rules")
 
-	tmpDir, err := os.MkdirTemp("", "pkguard-e2e-*")
+	tmpDir, err := os.MkdirTemp("", "bulwark-e2e-*")
 	if err != nil {
 		log.Fatalf("e2e: mktempdir: %v", err)
 	}

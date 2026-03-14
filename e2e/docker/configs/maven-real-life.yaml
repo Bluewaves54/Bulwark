@@ -1,4 +1,4 @@
-# Maven PKGuard — real-life production-like configuration.
+# Maven Bulwark — real-life production-like configuration.
 #
 # Simulates a realistic enterprise policy with multiple rules active:
 #   - Trusted Apache Commons packages bypass all rules

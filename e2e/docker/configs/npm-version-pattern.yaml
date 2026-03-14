@@ -1,4 +1,4 @@
-# npm PKGuard — version_patterns deny rule.
+# npm Bulwark — version_patterns deny rule.
 # Denies any version matching pre-release digit suffix patterns.
 server:
   port: 8080

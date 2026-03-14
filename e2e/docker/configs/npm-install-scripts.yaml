@@ -1,4 +1,4 @@
-# npm PKGuard — install_scripts deny.
+# npm Bulwark — install_scripts deny.
 # Denies packages that declare postinstall/preinstall/install lifecycle scripts.
 # esbuild has a postinstall script; lodash does not.
 server:

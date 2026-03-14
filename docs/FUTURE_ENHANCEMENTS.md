@@ -1,6 +1,6 @@
 # Future Enhancements
 
-This document outlines potential future enhancements for the PKGuard, aimed at increasing its robustness, observability, and value in an open-source ecosystem.
+This document outlines potential future enhancements for the Bulwark, aimed at increasing its robustness, observability, and value in an open-source ecosystem.
 
 ## 1. Vulnerability and CVE Feed Integration
 
@@ -30,7 +30,7 @@ The current single-node, in-memory TTL caching structure (`sync.RWMutex` + `map`
 - **Size-based eviction**: Enforce `max_size_mb` with LRU or entry-count limits to bound memory usage under sustained load.
 
 - **Topology A (Direct to Public Upstreams)**: Introduce an optional backend cache interface (e.g., Redis). This would prevent multiple proxy replicas from simultaneously hammering public upstream registries (npmjs.org, pypi.org) when CI pipelines burst under heavy load.
-- **Topology B (Enterprise Registries)**: Keep distributed caching strictly optional and off by default. In deployments where the proxy sits alongside an enterprise artifact repository, these solutions carry their own extensive, highly optimized caching layers. The PKGuard does not need to duplicate this effort; it can simply rely on the downstream registry to cache metadata out-of-the-box once inspected and curated.
+- **Topology B (Enterprise Registries)**: Keep distributed caching strictly optional and off by default. In deployments where the proxy sits alongside an enterprise artifact repository, these solutions carry their own extensive, highly optimized caching layers. The Bulwark does not need to duplicate this effort; it can simply rely on the downstream registry to cache metadata out-of-the-box once inspected and curated.
 
 ## 3. Observability and Dashboards
 

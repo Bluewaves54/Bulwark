@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Ad-hoc manual QE test script for PKGuard curation proxies.
+# Ad-hoc manual QE test script for Bulwark curation proxies.
 # Runs real package-manager commands against each proxy rule type.
 set -euo pipefail
 

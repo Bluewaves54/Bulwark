@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# install.sh — One-click PKGuard installer for macOS and Linux.
+# install.sh — One-click Bulwark installer for macOS and Linux.
 #
 # Downloads the correct binary for your OS/architecture and runs the built-in
 # setup command that installs the proxy, configures your package manager, and
 # creates an autostart entry.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.sh | bash
 #   curl -fsSL ... | bash -s -- npm          # install only the npm proxy
 #   curl -fsSL ... | bash -s -- pypi maven   # install pypi and maven proxies
 #
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 # --- Configuration ---
-REPO="Bluewaves54/PKGuard"
+REPO="Bluewaves54/Bulwark"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"
 
@@ -95,7 +95,7 @@ main() {
   local os="${platform%/*}"
   local arch="${platform#*/}"
 
-  echo "=== PKGuard Installer ==="
+  echo "=== Bulwark Installer ==="
   echo "Platform: ${os}/${arch}"
   echo "Ecosystems: ${ecosystems[*]}"
   echo ""
@@ -120,9 +120,9 @@ main() {
   trap 'rm -rf "${INSTALL_TMPDIR}"' EXIT
 
   for eco in "${ecosystems[@]}"; do
-    local binary_name="${eco}-pkguard-${os}-${arch}"
+    local binary_name="${eco}-bulwark-${os}-${arch}"
     local download_url="${DOWNLOAD_BASE}/${version}/${binary_name}"
-    local dest="${INSTALL_TMPDIR}/${eco}-pkguard"
+    local dest="${INSTALL_TMPDIR}/${eco}-bulwark"
 
     echo "Downloading ${binary_name} ..."
     if ! download "${download_url}" "${dest}"; then
@@ -133,7 +133,7 @@ main() {
 
     chmod +x "${dest}"
 
-    echo "Running setup for ${eco}-pkguard ..."
+    echo "Running setup for ${eco}-bulwark ..."
     "${dest}" -setup
     echo ""
   done
@@ -142,8 +142,8 @@ main() {
   echo ""
   echo "Installed proxies will start automatically on login."
   echo ""
-  echo "To reconfigure rules, edit the config files in ~/.pkguard/<ecosystem>/config.yaml"
-  echo "To uninstall a proxy, run: ~/.pkguard/bin/<ecosystem>-pkguard -uninstall"
+  echo "To reconfigure rules, edit the config files in ~/.bulwark/<ecosystem>/config.yaml"
+  echo "To uninstall a proxy, run: ~/.bulwark/bin/<ecosystem>-bulwark -uninstall"
 }
 
 main "$@"

@@ -1,4 +1,4 @@
-# Maven PKGuard — Docker e2e allow-all config.
+# Maven Bulwark — Docker e2e allow-all config.
 server:
   port: 8080
   read_timeout_seconds: 30

@@ -1,4 +1,4 @@
-# npm PKGuard — real-life production-like configuration.
+# npm Bulwark — real-life production-like configuration.
 #
 # Simulates a realistic enterprise policy with multiple rules active:
 #   - Trusted scoped packages (@types/*, @babel/*) bypass all rules

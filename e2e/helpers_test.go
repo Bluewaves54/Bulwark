@@ -10,7 +10,7 @@
 //
 // Usage:
 //
-//	PKGUARD_E2E_LIVE=true go test -v -tags=e2e -timeout=5m ./e2e/...
+//	BULWARK_E2E_LIVE=true go test -v -tags=e2e -timeout=5m ./e2e/...
 package e2e
 
 import (
@@ -34,9 +34,9 @@ const (
 
 // Module directory names.
 const (
-	pypiDir  = "pypi-pkguard"
-	npmDir   = "npm-pkguard"
-	mavenDir = "maven-pkguard"
+	pypiDir  = "pypi-bulwark"
+	npmDir   = "npm-bulwark"
+	mavenDir = "maven-bulwark"
 )
 
 // ProxyProcess holds a running proxy child process and its base URL.
@@ -140,10 +140,10 @@ func assertStatus(t *testing.T, resp *http.Response, want int) {
 	}
 }
 
-// skipIfNotLive skips the test when PKGUARD_E2E_LIVE is not set to "true".
+// skipIfNotLive skips the test when BULWARK_E2E_LIVE is not set to "true".
 func skipIfNotLive(t *testing.T) {
 	t.Helper()
-	if os.Getenv("PKGUARD_E2E_LIVE") != "true" {
-		t.Skip("skipping live e2e test: set PKGUARD_E2E_LIVE=true to run")
+	if os.Getenv("BULWARK_E2E_LIVE") != "true" {
+		t.Skip("skipping live e2e test: set BULWARK_E2E_LIVE=true to run")
 	}
 }

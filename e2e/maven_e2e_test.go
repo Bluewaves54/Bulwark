@@ -151,7 +151,7 @@ func TestMavenAgeBlockFiltersAllVersionsLive(t *testing.T) {
 	assertStatus(t, resp, 403)
 
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "PKGuard") {
-		t.Error("expected 403 body to contain PKGuard policy reason")
+	if !strings.Contains(string(body), "Bulwark") {
+		t.Error("expected 403 body to contain Bulwark policy reason")
 	}
 }

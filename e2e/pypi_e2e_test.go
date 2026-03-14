@@ -110,21 +110,31 @@ func TestPyPICertifiSimpleIndexLive(t *testing.T) {
 	assertStatus(t, resp, 200)
 }
 
-// TestPyPIAgeBlockFiltersAllVersionsLive starts a proxy with min_package_age_days=10000
-// for urllib3 and verifies that the proxy returns 403 when ALL versions are blocked.
-// With a 10000-day minimum age no urllib3 version qualifies, so the proxy returns
-// a 403 error with a policy reason.
-func TestPyPIAgeBlockFiltersAllVersionsLive(t *testing.T) {
+// TestPyPIAgeBlockFiltersMostVersionsLive starts a proxy with min_package_age_days=10000
+// for urllib3 and verifies that the proxy filters the vast majority of versions.
+// A few ancient versions (0.3, 0.3.1, 0.4.0, 0.4.1) have no files on PyPI and
+// therefore no upload_time — the age rule cannot evaluate them, so they survive.
+// The test asserts that filtering occurred via the X-Curation-Policy-Notice header.
+func TestPyPIAgeBlockFiltersMostVersionsLive(t *testing.T) {
 	skipIfNotLive(t)
 	const filterPort = 18205
 	proxy := startProxy(t, pypiProxyBinPath, testdataConfig(t, "pypi-min-age-block.yaml"), filterPort)
 
 	resp := mustGet(t, proxy.BaseURL+"/simple/"+pypiPkgUrllib3+"/")
 	defer resp.Body.Close()
-	assertStatus(t, resp, 403)
+	assertStatus(t, resp, 200)
+
+	notice := resp.Header.Get("X-Curation-Policy-Notice")
+	if notice == "" {
+		t.Error("expected X-Curation-Policy-Notice header when versions are filtered by age")
+	}
 
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "PKGuard") {
-		t.Error("expected 403 body to contain PKGuard policy reason")
+	bodyStr := string(body)
+	// Versions with upload_time metadata (e.g. 2.0.7, 1.26.18) must be absent.
+	for _, blocked := range []string{"2.0.7", "1.26.18", "1.25.11"} {
+		if strings.Contains(bodyStr, blocked) {
+			t.Errorf("expected version %s to be filtered by age rule, but it is still present", blocked)
+		}
 	}
 }

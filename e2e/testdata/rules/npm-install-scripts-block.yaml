@@ -1,4 +1,4 @@
-# npm PKGuard — e2e install_scripts deny configuration.
+# npm Bulwark — e2e install_scripts deny configuration.
 # Blocks any package that declares preinstall/install/postinstall lifecycle scripts.
 # esbuild has a postinstall script; lodash does not.
 

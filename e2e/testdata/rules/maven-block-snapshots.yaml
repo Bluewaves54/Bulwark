@@ -1,4 +1,4 @@
-# Maven PKGuard — e2e block SNAPSHOT configuration.
+# Maven Bulwark — e2e block SNAPSHOT configuration.
 
 server:
   port: 18202

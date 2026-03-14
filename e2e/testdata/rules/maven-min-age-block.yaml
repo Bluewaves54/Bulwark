@@ -1,4 +1,4 @@
-# Maven PKGuard — e2e minimum-age block configuration.
+# Maven Bulwark — e2e minimum-age block configuration.
 # Uses min_package_age_days: 10000 to block ALL versions of junit:junit
 # (no version is older than ~27 years, so everything published after the cutoff is denied).
 

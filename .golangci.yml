@@ -1,4 +1,4 @@
-# golangci-lint configuration for Corp Registry PKGuard.
+# golangci-lint configuration for Corp Registry Bulwark.
 # Run: golangci-lint run ./...
 run:
   timeout: 5m
@@ -29,7 +29,7 @@ linters-settings:
     min-occurrences: 3
 
   goimports:
-    local-prefixes: PKGuard
+    local-prefixes: Bulwark
 
 issues:
   exclude-rules:

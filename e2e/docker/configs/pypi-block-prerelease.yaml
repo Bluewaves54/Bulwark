@@ -1,4 +1,4 @@
-# PyPI PKGuard — Docker e2e block pre-release config.
+# PyPI Bulwark — Docker e2e block pre-release config.
 server:
   port: 8080
   read_timeout_seconds: 30

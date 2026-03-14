@@ -1,20 +1,20 @@
-# Architecture — PKGuard
+# Architecture — Bulwark
 
-This document provides the complete architectural reference for the PKGuard, including system context, component relationships, deployment topologies, and request-processing sequence diagrams. All diagrams use [Mermaid](https://mermaid.js.org) syntax.
+This document provides the complete architectural reference for the Bulwark, including system context, component relationships, deployment topologies, and request-processing sequence diagrams. All diagrams use [Mermaid](https://mermaid.js.org) syntax.
 
 ---
 
 ## 1. System Context (C4 Level 1)
 
-The PKGuard sits between developer tools and public package registries, acting as a policy enforcement gateway. It has no UI and no persistent database — all state is held in-process (config + cache).
+The Bulwark sits between developer tools and public package registries, acting as a policy enforcement gateway. It has no UI and no persistent database — all state is held in-process (config + cache).
 
 ```mermaid
 C4Context
-  title System Context — PKGuard
+  title System Context — Bulwark
 
   Person(dev, "Developer / CI Pipeline", "Uses language-specific package managers: pip, npm, mvn, cargo, dotnet, bundler, go get")
 
-    System(pkguard, "PKGuard — PKGuard", "HTTP proxy gateway that enforces package security policy. Filters versions by age, pre-release status, namespace, typosquatting, velocity, and custom rules.")
+    System(bulwark, "Bulwark — Bulwark", "HTTP proxy gateway that enforces package security policy. Filters versions by age, pre-release status, namespace, typosquatting, velocity, and custom rules.")
 
   System_Ext(pypi, "PyPI (pypi.org)", "Python package index")
   System_Ext(npm, "npm Registry (registry.npmjs.org)", "JavaScript package registry")
@@ -26,16 +26,16 @@ C4Context
   System_Ext(enterprise, "Enterprise Registry\n(corporate artifact repository)", "Corporate package mirror and internal artifact store")
   System_Ext(osv, "OSV.dev / NVD", "Vulnerability advisory feeds (future)")
 
-    Rel(dev, pkguard, "Package install requests", "HTTP/HTTPS")
-    Rel(pkguard, pypi, "Filtered requests (Topology A)", "HTTPS")
-    Rel(pkguard, npm, "Filtered requests (Topology A)", "HTTPS")
-    Rel(pkguard, maven, "Filtered requests (Topology A)", "HTTPS")
-    Rel(pkguard, nuget, "Filtered requests (Topology A)", "HTTPS")
-    Rel(pkguard, cargo, "Filtered requests (Topology A)", "HTTPS")
-    Rel(pkguard, enterprise, "Filtered requests (Topology B)", "HTTPS")
+    Rel(dev, bulwark, "Package install requests", "HTTP/HTTPS")
+    Rel(bulwark, pypi, "Filtered requests (Topology A)", "HTTPS")
+    Rel(bulwark, npm, "Filtered requests (Topology A)", "HTTPS")
+    Rel(bulwark, maven, "Filtered requests (Topology A)", "HTTPS")
+    Rel(bulwark, nuget, "Filtered requests (Topology A)", "HTTPS")
+    Rel(bulwark, cargo, "Filtered requests (Topology A)", "HTTPS")
+    Rel(bulwark, enterprise, "Filtered requests (Topology B)", "HTTPS")
   Rel(enterprise, pypi, "Upstream fetch (Topology B)", "HTTPS")
   Rel(enterprise, npm, "Upstream fetch (Topology B)", "HTTPS")
-    Rel(pkguard, osv, "Advisory feed pull (future)", "HTTPS")
+    Rel(bulwark, osv, "Advisory feed pull (future)", "HTTPS")
 ```
 
 ---
@@ -46,19 +46,19 @@ Each ecosystem is a self-contained Go binary. All binaries share the `common/` m
 
 ```mermaid
 C4Container
-  title Container Diagram — PKGuard
+  title Container Diagram — Bulwark
 
   Person(dev, "Developer / CI Pipeline")
   System_Ext(upstream, "Upstream Registries\n(public or enterprise)")
 
-    Container_Boundary(pkguard, "PKGuard") {
-    Container(pypi_proxy, "pypi-pkguard", "Go binary", "Implements PyPI Simple Index and PEP 691 protocols. Port 18000.")
-    Container(npm_proxy, "npm-pkguard", "Go binary", "Implements npm registry / packument protocol. Port 18001.")
-    Container(maven_proxy, "maven-pkguard", "Go binary [FUTURE]", "Implements Maven 2 repository protocol. Port 18002.")
-    Container(nuget_proxy, "nuget-pkguard", "Go binary [FUTURE]", "Implements NuGet V3 API protocol. Port 18003.")
-    Container(cargo_proxy, "cargo-pkguard", "Go binary [FUTURE]", "Implements Cargo sparse index protocol. Port 18004.")
-    Container(rubygems_proxy, "rubygems-pkguard", "Go binary [FUTURE]", "Implements RubyGems API protocol. Port 18005.")
-    Container(gomod_proxy, "gomod-pkguard", "Go binary [FUTURE]", "Implements Go module proxy protocol. Port 18006.")
+    Container_Boundary(bulwark, "Bulwark") {
+    Container(pypi_proxy, "pypi-bulwark", "Go binary", "Implements PyPI Simple Index and PEP 691 protocols. Port 18000.")
+    Container(npm_proxy, "npm-bulwark", "Go binary", "Implements npm registry / packument protocol. Port 18001.")
+    Container(maven_proxy, "maven-bulwark", "Go binary [FUTURE]", "Implements Maven 2 repository protocol. Port 18002.")
+    Container(nuget_proxy, "nuget-bulwark", "Go binary [FUTURE]", "Implements NuGet V3 API protocol. Port 18003.")
+    Container(cargo_proxy, "cargo-bulwark", "Go binary [FUTURE]", "Implements Cargo sparse index protocol. Port 18004.")
+    Container(rubygems_proxy, "rubygems-bulwark", "Go binary [FUTURE]", "Implements RubyGems API protocol. Port 18005.")
+    Container(gomod_proxy, "gomod-bulwark", "Go binary [FUTURE]", "Implements Go module proxy protocol. Port 18006.")
 
     ContainerDb(cache, "In-Process Cache", "sync.RWMutex + map + TTL", "Per-binary TTL cache. Keyed by request URL. TTL configurable; max_size_mb is reserved but not yet enforced.")
     Container(rule_engine, "Rule Engine (common/)", "Go module", "Shared: EvaluatePackage, EvaluateVersion, trusted packages, typosquatting, namespace protection, install scripts, velocity detection.")
@@ -92,10 +92,10 @@ The internal structure of each proxy binary follows the same pattern. This diagr
 
 ```mermaid
 C4Component
-  title Component Diagram — pypi-pkguard binary
+  title Component Diagram — pypi-bulwark binary
 
-  Container_Boundary(pypi, "pypi-pkguard") {
-    Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -config), loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM.")
+  Container_Boundary(pypi, "pypi-bulwark") {
+    Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -config), auto-detects first run and performs setup if needed, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM.")
     Component(server, "server.go — Server", "Go struct", "Registers HTTP routes on ServeMux. Holds references to config, HTTP client, cache, metrics, rule engine, logger.")
     Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handleExternal, handleProxy, handleHealth, handleReadyz, handleMetrics, handleGetLogLevel, handleSetLogLevel. Each handler follows the filter pipeline.")
     Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with reason). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with reason. 7. Rewrite and return filtered response.")
@@ -123,23 +123,23 @@ C4Component
 
 ## 4. Deployment Topology A — Direct Proxy
 
-Developer tools are pointed directly at the PKGuard. No enterprise registry is involved.
+Developer tools are pointed directly at the Bulwark. No enterprise registry is involved.
 
 ```mermaid
 flowchart TD
     subgraph Developer Workstation / CI
-        pip["pip / uv / poetry\n~/.pip/pip.conf\nindex-url = http://pkguard:18000/simple/"]
-        npm_cli["npm / yarn / pnpm\n.npmrc\nregistry=http://pkguard:18001/"]
-        mvn["mvn / gradle\nsettings.xml mirror\nurl: http://pkguard:18002/"]
-        cargo_cli["cargo\n.cargo/config.toml\n[source.crates-io] replace-with = 'pkguard'\n[source.pkguard] registry = 'sparse+http://pkguard:18004/'"]
+        pip["pip / uv / poetry\n~/.pip/pip.conf\nindex-url = http://bulwark:18000/simple/"]
+        npm_cli["npm / yarn / pnpm\n.npmrc\nregistry=http://bulwark:18001/"]
+        mvn["mvn / gradle\nsettings.xml mirror\nurl: http://bulwark:18002/"]
+        cargo_cli["cargo\n.cargo/config.toml\n[source.crates-io] replace-with = 'bulwark'\n[source.bulwark] registry = 'sparse+http://bulwark:18004/'"]
     end
 
-    subgraph Kubernetes / Docker — PKGuard Proxy
+    subgraph Kubernetes / Docker — Bulwark Proxy
         direction TB
-        PyPI["pypi-pkguard :18000\nTopology A config\nupstream: https://pypi.org"]
-        NPM["npm-pkguard :18001\nTopology A config\nupstream: https://registry.npmjs.org"]
-        MVN["maven-pkguard :18002\nTopology A config\nupstream: https://repo1.maven.org"]
-        CRG["cargo-pkguard :18004\nTopology A config\nupstream: https://sparse.crates.io"]
+        PyPI["pypi-bulwark :18000\nTopology A config\nupstream: https://pypi.org"]
+        NPM["npm-bulwark :18001\nTopology A config\nupstream: https://registry.npmjs.org"]
+        MVN["maven-bulwark :18002\nTopology A config\nupstream: https://repo1.maven.org"]
+        CRG["cargo-bulwark :18004\nTopology A config\nupstream: https://sparse.crates.io"]
     end
 
     subgraph Public Internet
@@ -169,7 +169,7 @@ flowchart TD
 
 ## 5. Deployment Topology B — Enterprise Registry Middleware
 
-Developer tools are pointed at the existing enterprise registry. The enterprise registry's remote/proxy repositories are reconfigured to fetch through the PKGuard. No developer client reconfiguration is needed.
+Developer tools are pointed at the existing enterprise registry. The enterprise registry's remote/proxy repositories are reconfigured to fetch through the Bulwark. No developer client reconfiguration is needed.
 
 ```mermaid
 flowchart TD
@@ -180,15 +180,15 @@ flowchart TD
 
     subgraph Enterprise Registry — Corporate Artifact Repository
         direction TB
-        ArtPyPI["PyPI Remote Repo\nRemote URL → http://pkguard:18000/simple/"]
-        ArtNPM["npm Remote Repo\nRemote URL → http://pkguard:18001/"]
-        ArtInternal["Internal / local repos\n(private packages — bypasses pkguard)"]
+        ArtPyPI["PyPI Remote Repo\nRemote URL → http://bulwark:18000/simple/"]
+        ArtNPM["npm Remote Repo\nRemote URL → http://bulwark:18001/"]
+        ArtInternal["Internal / local repos\n(private packages — bypasses bulwark)"]
     end
 
-    subgraph Kubernetes / Docker — PKGuard Proxy
+    subgraph Kubernetes / Docker — Bulwark Proxy
         direction TB
-        PyPIB["pypi-pkguard :18000\nTopology B config\nupstream: https://pypi.org\n(points at public — pkguard is the middle hop)"]
-        NPMB["npm-pkguard :18001\nTopology B config\nupstream: https://registry.npmjs.org"]
+        PyPIB["pypi-bulwark :18000\nTopology B config\nupstream: https://pypi.org\n(points at public — bulwark is the middle hop)"]
+        NPMB["npm-bulwark :18001\nTopology B config\nupstream: https://registry.npmjs.org"]
     end
 
     subgraph Public Internet
@@ -211,7 +211,7 @@ flowchart TD
     style ArtNPM fill:#7c3aed,color:#fff
 ```
 
-> **Note — Topology B variant:** Alternatively, the enterprise registry can be configured as the pkguard proxy's **upstream** (i.e. pkguard fetches from the enterprise registry, enterprise registry fetches from public). This variant is activated by setting `upstream.base_url` to the enterprise registry URL. In this case developers point at pkguard, and the enterprise registry sits **downstream** of public registries. Consult the `config-enterprise.yaml` files for both topologies.
+> **Note — Topology B variant:** Alternatively, the enterprise registry can be configured as the bulwark proxy's **upstream** (i.e. bulwark fetches from the enterprise registry, enterprise registry fetches from public). This variant is activated by setting `upstream.base_url` to the enterprise registry URL. In this case developers point at bulwark, and the enterprise registry sits **downstream** of public registries. Consult the `config-enterprise.yaml` files for both topologies.
 
 ---
 
@@ -267,9 +267,9 @@ When a package is entirely blocked — either by a package-level deny rule or be
 
 | Ecosystem | Response Format | Example Body |
 |---|---|---|
-| **npm** | JSON `{"error":"..."}` | `{"error":"[PKGuard] event-stream: package matches deny list"}` |
-| **PyPI** | Plain text | `[PKGuard] requests: all available versions blocked by policy` |
-| **Maven** | Plain text (via `http.Error`) | `[PKGuard] com.example:mylib: all available versions blocked by policy` |
+| **npm** | JSON `{"error":"..."}` | `{"error":"[Bulwark] event-stream: package matches deny list"}` |
+| **PyPI** | Plain text | `[Bulwark] requests: all available versions blocked by policy` |
+| **Maven** | Plain text (via `http.Error`) | `[Bulwark] com.example:mylib: all available versions blocked by policy` |
 
 This ensures package managers display a meaningful error message (e.g., npm shows the `error` field) instead of confusing messages like `ENOVERSIONS` (npm) or "No matching distribution found" (pip).
 
@@ -286,7 +286,7 @@ When only *some* versions are blocked, the proxy still returns a **200 OK** with
 ```mermaid
 sequenceDiagram
     participant pip as pip client
-    participant proxy as pypi-pkguard proxy
+    participant proxy as pypi-bulwark proxy
     participant cache as In-Process Cache
     participant engine as Rule Engine
     participant pypi as pypi.org
@@ -334,13 +334,13 @@ Same `pip install requests` but the enterprise registry is in the middle.
 sequenceDiagram
     participant pip as pip client
     participant art as Enterprise Registry
-    participant proxy as pypi-pkguard proxy\n(Topology A config)
+    participant proxy as pypi-bulwark proxy\n(Topology A config)
     participant pypi as pypi.org
 
     pip->>art: GET /pypi/simple/requests/ (enterprise registry virtual repo)
     art->>art: Cache miss in enterprise registry
 
-    art->>proxy: GET /simple/requests/ (remote repo fetch via pkguard)
+    art->>proxy: GET /simple/requests/ (remote repo fetch via bulwark)
     proxy->>proxy: EvaluatePackage, cache miss
     proxy->>pypi: GET /simple/requests/
     pypi-->>proxy: 200 (all versions)
@@ -372,7 +372,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant npm_cli as npm client
-    participant proxy as npm-pkguard proxy
+    participant proxy as npm-bulwark proxy
     participant cache as In-Process Cache
     participant engine as Rule Engine
     participant npmjs as registry.npmjs.org
@@ -415,7 +415,7 @@ An attacker publishes `reqvests` (edit distance 1 from `requests`). A developer 
 ```mermaid
 sequenceDiagram
     participant pip as pip client
-    participant proxy as pypi-pkguard proxy
+    participant proxy as pypi-bulwark proxy
     participant engine as Rule Engine
 
     pip->>proxy: GET /simple/reqvests/
@@ -469,7 +469,7 @@ Second request for the same package within TTL.
 ```mermaid
 sequenceDiagram
     participant client as Package Manager Client
-    participant proxy as PKGuard
+    participant proxy as Bulwark
     participant cache as In-Process Cache
     participant upstream as Upstream Registry
 
@@ -500,7 +500,7 @@ The upstream registry returns a 503. The proxy fails gracefully.
 ```mermaid
 sequenceDiagram
     participant client as Package Manager Client
-    participant proxy as PKGuard
+    participant proxy as Bulwark
     participant upstream as Upstream Registry
 
     client->>proxy: GET /simple/flask/
@@ -519,19 +519,19 @@ sequenceDiagram
 
 ## 14. Deployment — Kubernetes (Single Ecosystem)
 
-Standard Kubernetes deployment for `pypi-pkguard` in a dedicated namespace.
+Standard Kubernetes deployment for `pypi-bulwark` in a dedicated namespace.
 
 ```mermaid
 flowchart TB
     subgraph Kubernetes Cluster
         subgraph curation-ns — namespace
             direction TB
-            SA["ServiceAccount\npkguard-pypi-sa\n(no RBAC)"]
-            CM["ConfigMap\npkguard-pypi-config\nconfig.yaml data key"]
+            SA["ServiceAccount\nbulwark-pypi-sa\n(no RBAC)"]
+            CM["ConfigMap\nbulwark-pypi-config\nconfig.yaml data key"]
             SVC["Service\nClusterIP :18000\n→ pods :18000"]
 
             subgraph Deployment — 2 replicas
-                POD1["Pod 1\npypi-pkguard container\nUID 1001 (non-root)\nresources: 100m/64Mi req\n500m/256Mi lim\nvolumeMount: /app/config.yaml"]
+                POD1["Pod 1\npypi-bulwark container\nUID 1001 (non-root)\nresources: 100m/64Mi req\n500m/256Mi lim\nvolumeMount: /app/config.yaml"]
                 POD2["Pod 2\n(same spec)"]
             end
 
@@ -636,7 +636,7 @@ flowchart TD
 
 The E2E test suite compiles the proxy binaries, starts them as child processes, and sends real HTTP
 requests to public package registries. **No mocks are used.** Tests are gated by `//go:build e2e`
-and the `PKGUARD_E2E_LIVE=true` environment variable.
+and the `BULWARK_E2E_LIVE=true` environment variable.
 
 Topology B compatibility cannot be tested in open-source CI. See
 the Topology B section in `README.md` for integration guidance.
@@ -648,9 +648,9 @@ flowchart TB
     end
 
     subgraph Proxy Processes (test-managed child processes)
-        PA["pypi-pkguard :18100\nupstream=https://pypi.org\nrules: allow all (age=0)"]
-        NA["npm-pkguard :18101\nupstream=https://registry.npmjs.org\nrules: allow all (age=0)"]
-        MA["maven-pkguard :18102\nupstream=https://repo1.maven.org/maven2\nrules: allow all (age=0)"]
+        PA["pypi-bulwark :18100\nupstream=https://pypi.org\nrules: allow all (age=0)"]
+        NA["npm-bulwark :18101\nupstream=https://registry.npmjs.org\nrules: allow all (age=0)"]
+        MA["maven-bulwark :18102\nupstream=https://repo1.maven.org/maven2\nrules: allow all (age=0)"]
     end
 
     subgraph Public Registries (real internet)
@@ -726,7 +726,7 @@ flowchart LR
         T6["CVE in dependency\n(known vulnerable version)"]
     end
 
-    subgraph PKGuard Controls
+    subgraph Bulwark Controls
         C1["Typosquatting detection\n(Levenshtein distance)"]
         C2["Age filter\n(min_package_age_days)"]
         C3["Namespace protection\n(internal pattern match)"]
@@ -771,7 +771,7 @@ flowchart LR
     end
 
     subgraph "Topology B — config-enterprise.yaml"
-        B1["upstream:\n  base_url: https://registry.corp.example/pypi\n  auth:\n    token: env:PKGUARD_AUTH_TOKEN\n  tls:\n    ca_cert_file: /certs/internal-ca.pem"]
+        B1["upstream:\n  base_url: https://registry.corp.example/pypi\n  auth:\n    token: env:BULWARK_AUTH_TOKEN\n  tls:\n    ca_cert_file: /certs/internal-ca.pem"]
     end
 
     A1 --> SAME["Same binary\nSame rule engine\nSame filtering pipeline"]
@@ -787,7 +787,30 @@ flowchart LR
 
 Each proxy binary embeds its `config-best-practices.yaml` via Go's `//go:embed` directive. The shared `common/installer` package provides platform-aware setup and uninstall logic.
 
-### Installer Flow
+### First-Run Auto-Setup
+
+When a binary is launched without the `-config` flag and no existing config file is found, the proxy automatically performs a first-run setup before starting the server:
+
+```mermaid
+flowchart TD
+    A["User launches binary\n(no flags)"] --> B{"resolveConfig()"}
+    B -->|"-config explicitly set"| C["Use specified path"]
+    B -->|"config.yaml in cwd"| D["Use local config"]
+    B -->|"~/.bulwark/ config exists"| E["Use installed config"]
+    B -->|"No config found"| F["First-Run Auto-Setup"]
+    F --> G["installer.SetupFilesOnly()"]
+    G --> H["Write best-practices\nconfig.yaml"]
+    G --> I["Copy binary to\n~/.bulwark/bin/"]
+    G --> J["Configure package manager"]
+    G --> K["Create autostart entry"]
+    H --> L["Start proxy server\nusing installed config"]
+```
+
+This means users can download a single binary, double-click it, and immediately have a fully configured proxy running with best-practices security rules.
+
+### Explicit Setup / Uninstall
+
+The `-setup` and `-uninstall` flags provide explicit control over the installation lifecycle:
 
 ```mermaid
 flowchart TD
@@ -796,9 +819,9 @@ flowchart TD
     B --> D["os.Executable()"]
     C --> E["SetupFiles()"]
     D --> E
-    E --> F["Create ~/.pkguard/<ecosystem>/"]
+    E --> F["Create ~/.bulwark/<ecosystem>/"]
     E --> G["Write config.yaml\n(embedded best-practices)"]
-    E --> H["Copy binary to\n~/.pkguard/bin/"]
+    E --> H["Copy binary to\n~/.bulwark/bin/"]
     E --> I["writePkgMgrConfig()"]
     E --> J["writeAutostartFile()"]
     I --> K{"Ecosystem?"}
@@ -820,16 +843,16 @@ flowchart TD
 ### Installed File Layout
 
 ```
-~/.pkguard/
+~/.bulwark/
 ├── bin/
-│   ├── npm-pkguard          # (or .exe on Windows)
-│   ├── pypi-pkguard
-│   └── maven-pkguard
-├── npm-pkguard/
+│   ├── npm-bulwark          # (or .exe on Windows)
+│   ├── pypi-bulwark
+│   └── maven-bulwark
+├── npm-bulwark/
 │   └── config.yaml           # Editable rules config
-├── pypi-pkguard/
+├── pypi-bulwark/
 │   └── config.yaml
-└── maven-pkguard/
+└── maven-bulwark/
     └── config.yaml
 ```
 
@@ -837,13 +860,15 @@ flowchart TD
 
 | OS | Mechanism | File Location |
 |----|-----------|---------------|
-| macOS | LaunchAgent | `~/Library/LaunchAgents/com.pkguard.<eco>.plist` |
-| Linux | systemd user service | `~/.config/systemd/user/pkguard-<eco>.service` |
-| Windows | Startup batch file | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\pkguard-<eco>.bat` |
+| macOS | LaunchAgent | `~/Library/LaunchAgents/com.bulwark.<eco>.plist` |
+| Linux | systemd user service | `~/.config/systemd/user/bulwark-<eco>.service` |
+| Windows | Startup batch file | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\bulwark-<eco>.bat` |
 
 ### Design Decisions
 
 - **`//go:embed`** for config: the binary is self-contained; no need to download config separately.
+- **First-run auto-setup**: `resolveConfig()` detects missing config and calls `installer.SetupFilesOnly()` (writes files but does not activate launchd/systemd, since the running process itself serves as the proxy).
+- **`run()` function**: the proxy lifecycle (`handleInstallMode → resolveConfig → initServer → runServer`) is extracted from `main()` into a testable `run()` function that returns an error instead of calling `os.Exit`.
 - **`goos` parameter** on all file-system functions: enables cross-platform unit testing without mocking `runtime.GOOS`.
 - **Separation of `SetupFiles` vs `ActivateServices`**: file-only operations are fully unit-testable with `t.TempDir()`; external commands (`launchctl`, `systemctl`, `npm`) are isolated with documented coverage exemptions.
-- **Maven backup/restore**: existing `settings.xml` is backed up to `settings.xml.pkguard-backup` on setup and restored on uninstall.
+- **Maven backup/restore**: existing `settings.xml` is backed up to `settings.xml.bulwark-backup` on setup and restored on uninstall.

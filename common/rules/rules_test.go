@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"PKGuard/common/config"
-	"PKGuard/common/rules"
+	"Bulwark/common/config"
+	"Bulwark/common/rules"
 )
 
 const (

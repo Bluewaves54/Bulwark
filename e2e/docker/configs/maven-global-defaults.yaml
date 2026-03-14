@@ -1,4 +1,4 @@
-# Maven PKGuard — global defaults: block_pre_releases + min_package_age_days.
+# Maven Bulwark — global defaults: block_pre_releases + min_package_age_days.
 # All packages without a specific rule hit the global defaults (age blocks most things).
 # commons-io has a bypass_age_filter rule so it still passes.
 server:

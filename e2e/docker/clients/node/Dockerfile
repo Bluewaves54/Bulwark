@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Node.js client for PKGuard e2e tests.
+# Node.js client for Bulwark e2e tests.
 # Includes npm, yarn (classic), and pnpm for testing installs through the proxy.
 
 FROM node:20-slim

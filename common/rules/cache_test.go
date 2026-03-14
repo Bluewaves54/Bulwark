@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"PKGuard/common/rules"
+	"Bulwark/common/rules"
 )
 
 func TestCacheGetMiss(t *testing.T) {

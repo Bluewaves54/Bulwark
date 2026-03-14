@@ -384,7 +384,7 @@ run_java_phases() {
 }
 
 echo "============================================"
-echo " PKGuard E2E Tests (Docker)"
+echo " Bulwark E2E Tests (Docker)"
 echo "============================================"
 echo ""
 

@@ -1,24 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# install.ps1 — One-click PKGuard installer for Windows.
+# install.ps1 — One-click Bulwark installer for Windows.
 #
 # Downloads the correct binary for your architecture and runs the built-in
 # setup command that installs the proxy, configures your package manager, and
 # creates a startup entry.
 #
 # Usage (PowerShell):
-#   irm https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.ps1 | iex
 #
 #   # Install specific ecosystems:
-#   & { irm https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.ps1 } npm
-#   & { irm https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.ps1 } npm pypi
+#   & { irm https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.ps1 } npm
+#   & { irm https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.ps1 } npm pypi
 #
 # Supported ecosystems: npm, pypi, maven
 
 $ErrorActionPreference = 'Stop'
 
 # --- Configuration ---
-$Repo = 'Bluewaves54/PKGuard'
+$Repo = 'Bluewaves54/Bulwark'
 $ApiUrl = "https://api.github.com/repos/$Repo/releases/latest"
 $DownloadBase = "https://github.com/$Repo/releases/download"
 
@@ -64,7 +64,7 @@ function Main {
 
     $arch = Get-Arch
 
-    Write-Host '=== PKGuard Installer ===' -ForegroundColor Cyan
+    Write-Host '=== Bulwark Installer ===' -ForegroundColor Cyan
     Write-Host "Platform: windows/$arch"
     Write-Host "Ecosystems: $($Ecosystems -join ', ')"
     Write-Host ''
@@ -86,14 +86,14 @@ Check https://github.com/$Repo/releases for available versions.
     Write-Host "Version: $version"
     Write-Host ''
 
-    $tmpDir = Join-Path $env:TEMP "pkguard-install-$(Get-Random)"
+    $tmpDir = Join-Path $env:TEMP "bulwark-install-$(Get-Random)"
     New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
 
     try {
         foreach ($eco in $Ecosystems) {
-            $binaryName = "$eco-pkguard-windows-$arch.exe"
+            $binaryName = "$eco-bulwark-windows-$arch.exe"
             $downloadUrl = "$DownloadBase/$version/$binaryName"
-            $dest = Join-Path $tmpDir "$eco-pkguard.exe"
+            $dest = Join-Path $tmpDir "$eco-bulwark.exe"
 
             Write-Host "Downloading $binaryName ..."
             try {
@@ -104,7 +104,7 @@ Check https://github.com/$Repo/releases for available versions.
                 exit 1
             }
 
-            Write-Host "Running setup for $eco-pkguard ..."
+            Write-Host "Running setup for $eco-bulwark ..."
             & $dest -setup
             Write-Host ''
         }
@@ -116,8 +116,8 @@ Check https://github.com/$Repo/releases for available versions.
     Write-Host ''
     Write-Host 'Installed proxies will start automatically on login.'
     Write-Host ''
-    Write-Host 'To reconfigure rules, edit the config files in ~\.pkguard\<ecosystem>\config.yaml'
-    Write-Host 'To uninstall a proxy, run: ~\.pkguard\bin\<ecosystem>-pkguard.exe -uninstall'
+    Write-Host 'To reconfigure rules, edit the config files in ~\.bulwark\<ecosystem>\config.yaml'
+    Write-Host 'To uninstall a proxy, run: ~\.bulwark\bin\<ecosystem>-bulwark.exe -uninstall'
 }
 
 Main @args

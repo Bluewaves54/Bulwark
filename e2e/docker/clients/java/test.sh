@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# E2E tests: real Maven / Gradle dependency resolution through the Maven PKGuard.
+# E2E tests: real Maven / Gradle dependency resolution through the Maven Bulwark.
 # Expects MAVEN_PROXY_URL to be set (e.g. http://maven-proxy:8080).
 #
 # Rule coverage:
@@ -83,7 +83,7 @@ write_maven_settings() {
                                                             http://maven.apache.org/xsd/settings-1.2.0.xsd">
     <mirrors>
         <mirror>
-            <id>pkguard-proxy</id>
+            <id>bulwark-proxy</id>
             <mirrorOf>*</mirrorOf>
             <url>${proxy_url}</url>
         </mirror>
@@ -225,7 +225,7 @@ if phase_enabled "min-age-block" && [ -n "${AGE_BLOCK_URL}" ]; then
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-    <groupId>com.pkguard.e2e</groupId>
+    <groupId>com.bulwark.e2e</groupId>
   <artifactId>maven-age-range</artifactId>
   <version>1.0.0</version>
   <dependencies>
@@ -397,7 +397,7 @@ if phase_enabled "explicit-deny" && [ -n "${EXPLICIT_DENY_URL}" ]; then
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-    <groupId>com.pkguard.e2e</groupId>
+    <groupId>com.bulwark.e2e</groupId>
   <artifactId>explicit-deny-fail</artifactId>
   <version>1.0.0</version>
   <dependencies>
@@ -426,7 +426,7 @@ EOF
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-    <groupId>com.pkguard.e2e</groupId>
+    <groupId>com.bulwark.e2e</groupId>
   <artifactId>explicit-deny-pass</artifactId>
   <version>1.0.0</version>
   <dependencies>
@@ -468,7 +468,7 @@ if phase_enabled "global-defaults" && [ -n "${GLOBAL_DEFAULTS_URL}" ]; then
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-    <groupId>com.pkguard.e2e</groupId>
+    <groupId>com.bulwark.e2e</groupId>
   <artifactId>global-deny</artifactId>
   <version>1.0.0</version>
   <dependencies>

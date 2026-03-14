@@ -1,4 +1,4 @@
-# PyPI PKGuard — real-life production-like configuration.
+# PyPI Bulwark — real-life production-like configuration.
 #
 # Simulates a realistic enterprise policy with multiple rules active:
 #   - Trusted core Python tooling (setuptools, pip, wheel) bypasses all rules

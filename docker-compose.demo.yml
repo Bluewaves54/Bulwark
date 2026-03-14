@@ -1,41 +1,41 @@
 version: '3.9'
 
 services:
-  pkguard-npm:
+  bulwark-npm:
     build:
       context: .
-      dockerfile: npm-pkguard/Dockerfile
+      dockerfile: npm-bulwark/Dockerfile
     ports:
       - "18001:18001"
     volumes:
-      - ./npm-pkguard/config-best-practices.yaml:/config.yaml:ro
+      - ./npm-bulwark/config-best-practices.yaml:/config.yaml:ro
     environment:
       - RUST_LOG=debug
     networks:
-      - pkguard-demo
+      - bulwark-demo
 
-  pkguard-pypi:
+  bulwark-pypi:
     build:
       context: .
-      dockerfile: pypi-pkguard/Dockerfile
+      dockerfile: pypi-bulwark/Dockerfile
     ports:
       - "18000:18000"
     volumes:
-      - ./pypi-pkguard/config-best-practices.yaml:/config.yaml:ro
+      - ./pypi-bulwark/config-best-practices.yaml:/config.yaml:ro
     networks:
-      - pkguard-demo
+      - bulwark-demo
 
-  pkguard-maven:
+  bulwark-maven:
     build:
       context: .
-      dockerfile: maven-pkguard/Dockerfile
+      dockerfile: maven-bulwark/Dockerfile
     ports:
       - "18002:18002"
     volumes:
-      - ./maven-pkguard/config-best-practices.yaml:/config.yaml:ro
+      - ./maven-bulwark/config-best-practices.yaml:/config.yaml:ro
     networks:
-      - pkguard-demo
+      - bulwark-demo
 
 networks:
-  pkguard-demo:
+  bulwark-demo:
     driver: bridge

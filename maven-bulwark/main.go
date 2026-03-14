@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Package main implements the Maven Bulwark.
+package main
+
+import (
+	"context"
+	_ "embed"
+	"flag"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
+
+	"Bulwark/common/installer"
+)
+
+//go:embed config-best-practices.yaml
+var defaultConfig []byte
+
+func newProxyInfo() installer.ProxyInfo {
+	return installer.ProxyInfo{
+		Ecosystem:  "maven",
+		BinaryName: "maven-bulwark",
+		Port:       18002,
+		ConfigData: defaultConfig,
+	}
+}
+
+// installFunc is a function that performs a setup or uninstall operation.
+type installFunc func(installer.ProxyInfo, io.Writer) error
+
+// handleInstallMode handles -setup and -uninstall flags.
+// Returns true if a mode was handled and main should exit.
+func handleInstallMode(doSetup, doUninstall bool, proxy installer.ProxyInfo, out io.Writer, setupFn, uninstallFn installFunc) (bool, error) {
+	if doSetup {
+		return true, setupFn(proxy, out)
+	}
+	if doUninstall {
+		return true, uninstallFn(proxy, out)
+	}
+	return false, nil
+}
+
+// resolveConfig determines the effective config path.
+func resolveConfig(cfgFlag string, explicit bool, proxy installer.ProxyInfo, home, goos string, out io.Writer, setupFn installFunc) (string, error) {
+	if explicit {
+		return cfgFlag, nil
+	}
+	if _, err := os.Stat(cfgFlag); err == nil {
+		return cfgFlag, nil
+	}
+	if installer.IsInstalledAt(proxy, home, goos) {
+		return installer.InstalledConfigPath(proxy, home, goos), nil
+	}
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "=== Bulwark First-Run Setup ===")
+	fmt.Fprintln(out, "No existing installation found. Setting up automatically...")
+	fmt.Fprintln(out, "")
+	if err := setupFn(proxy, out); err != nil {
+		return "", fmt.Errorf("auto-setup: %w", err)
+	}
+	fmt.Fprintln(out, "Starting proxy server...")
+	fmt.Fprintln(out, "")
+	return installer.InstalledConfigPath(proxy, home, goos), nil
+}
+
+// run drives the proxy lifecycle after flags are parsed. It returns an error
+// instead of calling os.Exit, making it testable.
+func run(ctx context.Context, cfgPath string, configExplicit, setupMode, uninstallMode bool,
+	authToken, authUser, authPass string, out io.Writer) error {
+
+	proxy := newProxyInfo()
+	handled, err := handleInstallMode(setupMode, uninstallMode, proxy, out, installer.Setup, installer.Uninstall)
+	if err != nil {
+		return fmt.Errorf("install mode: %w", err)
+	}
+	if handled {
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+
+	effectiveCfg, err := resolveConfig(cfgPath, configExplicit, proxy, home, runtime.GOOS, out, installer.SetupFilesOnly)
+	if err != nil {
+		return fmt.Errorf("config resolution: %w", err)
+	}
+
+	srv, logger, logFile, err := initServer(effectiveCfg, authToken, authUser, authPass)
+	if err != nil {
+		return fmt.Errorf("initialisation: %w", err)
+	}
+	if logFile != nil {
+		defer logFile.Close()
+	}
+
+	return runServer(ctx, srv, logger, "maven-bulwark")
+}
+
+func main() {
+	setupMode := flag.Bool("setup", false, "install Bulwark with best-practices config and configure Maven")
+	uninstallMode := flag.Bool("uninstall", false, "remove Bulwark and restore Maven settings")
+	cfgPath := flag.String("config", "config.yaml", "path to configuration file")
+	authToken := flag.String("auth-token", "", "upstream auth bearer token (overrides config)")
+	authUser := flag.String("auth-username", "", "upstream auth username (overrides config)")
+	authPass := flag.String("auth-password", "", "upstream auth password (overrides config)")
+	flag.Parse()
+
+	configExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "config" {
+			configExplicit = true
+		}
+	})
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	if err := run(ctx, *cfgPath, configExplicit, *setupMode, *uninstallMode, *authToken, *authUser, *authPass, os.Stdout); err != nil {
+		slog.Default().Error(err.Error())
+		os.Exit(1)
+	}
+}

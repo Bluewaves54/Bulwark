@@ -24,7 +24,7 @@ jobs:
 
       - name: Run unit tests before release
         run: |
-          for mod in common pypi-pkguard npm-pkguard maven-pkguard; do
+          for mod in common pypi-bulwark npm-bulwark maven-bulwark; do
             (cd "$mod" && go test -count=1 -race ./...)
           done
 
@@ -58,7 +58,7 @@ jobs:
       - name: Build and push Docker images
         run: |
           TAG=${GITHUB_REF_NAME}
-          for mod in pypi-pkguard npm-pkguard maven-pkguard; do
+          for mod in pypi-bulwark npm-bulwark maven-bulwark; do
             docker build -f "${mod}/Dockerfile" \
               -t "ghcr.io/${{ github.repository }}/${mod}:${TAG}" \
               -t "ghcr.io/${{ github.repository }}/${mod}:latest" .

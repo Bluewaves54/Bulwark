@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# E2E tests: real npm / yarn / pnpm installs through the npm PKGuard.
+# E2E tests: real npm / yarn / pnpm installs through the npm Bulwark.
 # Expects NPM_PROXY_URL to be set (e.g. http://npm-proxy:8080).
 #
 # Rule coverage:

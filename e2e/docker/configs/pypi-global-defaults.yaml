@@ -1,4 +1,4 @@
-# PyPI PKGuard — global defaults: block_pre_releases + min_package_age_days.
+# PyPI Bulwark — global defaults: block_pre_releases + min_package_age_days.
 # All packages without a specific rule hit the global defaults.
 # urllib3 has a specific bypass_age_filter rule so it still passes.
 server:

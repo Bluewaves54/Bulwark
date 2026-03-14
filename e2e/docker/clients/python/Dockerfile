@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Python client for PKGuard e2e tests.
+# Python client for Bulwark e2e tests.
 # Includes pip, pip3, and uv for testing PyPI package installs through the proxy.
 
 FROM python:3.12-slim

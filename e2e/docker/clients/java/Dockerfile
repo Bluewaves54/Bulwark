@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Java client for PKGuard e2e tests.
+# Java client for Bulwark e2e tests.
 # Includes Maven and Gradle for testing dependency resolution through the proxy.
 
 FROM eclipse-temurin:21-jdk

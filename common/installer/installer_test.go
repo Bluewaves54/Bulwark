@@ -12,7 +12,7 @@ import (
 
 const (
 	testEcosystem  = EcosystemNpm
-	testBinaryName = "npm-pkguard"
+	testBinaryName = "npm-bulwark"
 	testPort       = 18001
 	testConfigData = "listen_port: 18001\n"
 	testDarwin     = OSDarwin
@@ -33,7 +33,7 @@ func testProxyInfo() ProxyInfo {
 func pypiProxyInfo() ProxyInfo {
 	return ProxyInfo{
 		Ecosystem:  "pypi",
-		BinaryName: "pypi-pkguard",
+		BinaryName: "pypi-bulwark",
 		Port:       18000,
 		ConfigData: []byte(testConfigData),
 	}
@@ -42,7 +42,7 @@ func pypiProxyInfo() ProxyInfo {
 func mavenProxyInfo() ProxyInfo {
 	return ProxyInfo{
 		Ecosystem:  "maven",
-		BinaryName: "maven-pkguard",
+		BinaryName: "maven-bulwark",
 		Port:       18002,
 		ConfigData: []byte(testConfigData),
 	}
@@ -64,19 +64,19 @@ func TestResolvePathsDarwin(t *testing.T) {
 	p := testProxyInfo()
 	paths := ResolvePaths(p, "/home/user", testDarwin)
 
-	if paths.Base != filepath.Join("/home/user", pkguardDir) {
+	if paths.Base != filepath.Join("/home/user", bulwarkDir) {
 		t.Errorf("Base = %s", paths.Base)
 	}
-	if paths.EcoDir != filepath.Join("/home/user", pkguardDir, testBinaryName) {
+	if paths.EcoDir != filepath.Join("/home/user", bulwarkDir, testBinaryName) {
 		t.Errorf("EcoDir = %s", paths.EcoDir)
 	}
-	if paths.BinDir != filepath.Join("/home/user", pkguardDir, binSubdir) {
+	if paths.BinDir != filepath.Join("/home/user", bulwarkDir, binSubdir) {
 		t.Errorf("BinDir = %s", paths.BinDir)
 	}
-	if paths.Config != filepath.Join("/home/user", pkguardDir, testBinaryName, "config.yaml") {
+	if paths.Config != filepath.Join("/home/user", bulwarkDir, testBinaryName, "config.yaml") {
 		t.Errorf("Config = %s", paths.Config)
 	}
-	if paths.Binary != filepath.Join("/home/user", pkguardDir, binSubdir, testBinaryName) {
+	if paths.Binary != filepath.Join("/home/user", bulwarkDir, binSubdir, testBinaryName) {
 		t.Errorf("Binary = %s", paths.Binary)
 	}
 }
@@ -125,17 +125,17 @@ func TestMavenSettingsXML(t *testing.T) {
 	if !strings.Contains(result, "http://localhost:18002") {
 		t.Error("missing proxy URL")
 	}
-	if !strings.Contains(result, "pkguard-maven") {
+	if !strings.Contains(result, "bulwark-maven") {
 		t.Error("missing mirror id")
 	}
 }
 
 func TestLaunchdPlistXML(t *testing.T) {
-	result := LaunchdPlistXML("com.pkguard.npm", "/usr/local/bin/npm-pkguard", "/etc/config.yaml")
-	if !strings.Contains(result, "<string>com.pkguard.npm</string>") {
+	result := LaunchdPlistXML("com.bulwark.npm", "/usr/local/bin/npm-bulwark", "/etc/config.yaml")
+	if !strings.Contains(result, "<string>com.bulwark.npm</string>") {
 		t.Error("missing label")
 	}
-	if !strings.Contains(result, "<string>/usr/local/bin/npm-pkguard</string>") {
+	if !strings.Contains(result, "<string>/usr/local/bin/npm-bulwark</string>") {
 		t.Error("missing binary path")
 	}
 	if !strings.Contains(result, "<string>/etc/config.yaml</string>") {
@@ -147,23 +147,23 @@ func TestLaunchdPlistXML(t *testing.T) {
 	if !strings.Contains(result, "<key>KeepAlive</key>") {
 		t.Error("missing KeepAlive")
 	}
-	if !strings.Contains(result, "/tmp/com.pkguard.npm.log") {
+	if !strings.Contains(result, "/tmp/com.bulwark.npm.log") {
 		t.Error("missing log path")
 	}
 }
 
 func TestSystemdUnitFile(t *testing.T) {
-	result := SystemdUnitFile("npm-pkguard", "/home/user/.pkguard/bin/npm-pkguard", "/home/user/.pkguard/npm-pkguard/config.yaml")
+	result := SystemdUnitFile("npm-bulwark", "/home/user/.bulwark/bin/npm-bulwark", "/home/user/.bulwark/npm-bulwark/config.yaml")
 	if !strings.Contains(result, "[Unit]") {
 		t.Error("missing [Unit]")
 	}
-	if !strings.Contains(result, "Description=PKGuard npm-pkguard") {
+	if !strings.Contains(result, "Description=Bulwark npm-bulwark") {
 		t.Error("missing description")
 	}
 	if !strings.Contains(result, "[Service]") {
 		t.Error("missing [Service]")
 	}
-	if !strings.Contains(result, "ExecStart=/home/user/.pkguard/bin/npm-pkguard -config /home/user/.pkguard/npm-pkguard/config.yaml") {
+	if !strings.Contains(result, "ExecStart=/home/user/.bulwark/bin/npm-bulwark -config /home/user/.bulwark/npm-bulwark/config.yaml") {
 		t.Error("missing ExecStart")
 	}
 	if !strings.Contains(result, "[Install]") {
@@ -175,14 +175,14 @@ func TestSystemdUnitFile(t *testing.T) {
 }
 
 func TestWindowsBatchFile(t *testing.T) {
-	result := WindowsBatchFile("C:\\pkguard\\npm.exe", "C:\\pkguard\\config.yaml")
+	result := WindowsBatchFile("C:\\bulwark\\npm.exe", "C:\\bulwark\\config.yaml")
 	if !strings.Contains(result, "@echo off") {
 		t.Error("missing @echo off")
 	}
-	if !strings.Contains(result, "C:\\pkguard\\npm.exe") {
+	if !strings.Contains(result, "C:\\bulwark\\npm.exe") {
 		t.Error("missing binary path")
 	}
-	if !strings.Contains(result, "C:\\pkguard\\config.yaml") {
+	if !strings.Contains(result, "C:\\bulwark\\config.yaml") {
 		t.Error("missing config path")
 	}
 	if !strings.Contains(result, "\r\n") {
@@ -250,9 +250,9 @@ func TestAutostartFileName(t *testing.T) {
 		goos string
 		want string
 	}{
-		{"Darwin", testDarwin, "com.pkguard.npm.plist"},
-		{"Linux", testLinux, "pkguard-npm.service"},
-		{"Windows", testWindows, "pkguard-npm.bat"},
+		{"Darwin", testDarwin, "com.bulwark.npm.plist"},
+		{"Linux", testLinux, "bulwark-npm.service"},
+		{"Windows", testWindows, "bulwark-npm.bat"},
 		{"FreeBSD", testFreeBSD, ""},
 	}
 	for _, tc := range tests {
@@ -276,7 +276,7 @@ func TestAutostartContent(t *testing.T) {
 		goos     string
 		contains string
 	}{
-		{"Darwin", testDarwin, "com.pkguard.npm"},
+		{"Darwin", testDarwin, "com.bulwark.npm"},
 		{"Linux", testLinux, "[Unit]"},
 		{"Windows", testWindows, "@echo off"},
 		{"FreeBSD", testFreeBSD, ""},
@@ -435,8 +435,8 @@ func TestSetupFilesMaven(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings.xml not found: %v", err)
 	}
-	if !strings.Contains(string(data), "pkguard-maven") {
-		t.Error("settings.xml missing pkguard mirror")
+	if !strings.Contains(string(data), "bulwark-maven") {
+		t.Error("settings.xml missing bulwark mirror")
 	}
 }
 
@@ -466,7 +466,7 @@ func TestSetupFilesMavenBackup(t *testing.T) {
 	}
 
 	// Verify backup was created.
-	backup := filepath.Join(m2Dir, "settings.xml.pkguard-backup")
+	backup := filepath.Join(m2Dir, "settings.xml.bulwark-backup")
 	data, err := os.ReadFile(backup)
 	if err != nil {
 		t.Fatalf("backup not found: %v", err)
@@ -865,5 +865,210 @@ func TestCopyFileEmptySource(t *testing.T) {
 	data, _ := os.ReadFile(dst)
 	if len(data) != 0 {
 		t.Errorf("expected empty dst, got %d bytes", len(data))
+	}
+}
+
+// --- InstalledConfigPath and IsInstalledAt ---
+
+func TestInstalledConfigPath(t *testing.T) {
+	p := ProxyInfo{BinaryName: "npm-bulwark"}
+	got := InstalledConfigPath(p, "/home/user", "linux")
+	want := filepath.Join("/home/user", ".bulwark", "npm-bulwark", "config.yaml")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestInstalledConfigPathWindows(t *testing.T) {
+	p := ProxyInfo{BinaryName: "pypi-bulwark"}
+	got := InstalledConfigPath(p, "C:\\Users\\me", OSWindows)
+	want := filepath.Join("C:\\Users\\me", ".bulwark", "pypi-bulwark", "config.yaml")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestIsInstalledAtNotInstalled(t *testing.T) {
+	home := t.TempDir()
+	p := ProxyInfo{BinaryName: "npm-bulwark"}
+	if IsInstalledAt(p, home, "linux") {
+		t.Error("expected not installed")
+	}
+}
+
+func TestIsInstalledAtInstalled(t *testing.T) {
+	home := t.TempDir()
+	p := ProxyInfo{BinaryName: "npm-bulwark"}
+	dir := filepath.Join(home, ".bulwark", "npm-bulwark")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !IsInstalledAt(p, home, "linux") {
+		t.Error("expected installed")
+	}
+}
+
+// --- SetupFilesOnlyAt ---
+
+func TestSetupFilesOnlyAtNpm(t *testing.T) {
+	home := t.TempDir()
+	p := testProxyInfo()
+	src := filepath.Join(home, "src-binary")
+	if err := os.WriteFile(src, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	err := SetupFilesOnlyAt(p, home, src, testLinux, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cfgPath := filepath.Join(home, ".bulwark", p.BinaryName, "config.yaml")
+	if _, err := os.Stat(cfgPath); err != nil {
+		t.Errorf("config not found: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "[ok] Config written") {
+		t.Errorf("expected config written message, got: %s", output)
+	}
+}
+
+func TestSetupFilesOnlyAtPypi(t *testing.T) {
+	home := t.TempDir()
+	p := pypiProxyInfo()
+	src := filepath.Join(home, "src-binary")
+	if err := os.WriteFile(src, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	err := SetupFilesOnlyAt(p, home, src, testLinux, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "[ok] pip index configured") {
+		t.Errorf("expected pip config message, got: %s", output)
+	}
+}
+
+func TestSetupFilesOnlyAtMaven(t *testing.T) {
+	home := t.TempDir()
+	p := mavenProxyInfo()
+	src := filepath.Join(home, "src-binary")
+	if err := os.WriteFile(src, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	err := SetupFilesOnlyAt(p, home, src, testLinux, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "[ok] Maven mirror configured") {
+		t.Errorf("expected maven settings message, got: %s", output)
+	}
+}
+
+func TestSetupFilesOnlyAtError(t *testing.T) {
+	p := testProxyInfo()
+	// Pass a non-existent source binary to trigger CopyFile error.
+	var buf bytes.Buffer
+	err := SetupFilesOnlyAt(p, t.TempDir(), "/no/such/binary", testLinux, &buf)
+	if err == nil {
+		t.Error("expected error for missing source binary")
+	}
+}
+
+func TestSetupFilesOnlyAtWindows(t *testing.T) {
+	home := t.TempDir()
+	p := testProxyInfo()
+	src := filepath.Join(home, "src-binary")
+	if err := os.WriteFile(src, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	err := SetupFilesOnlyAt(p, home, src, testWindows, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "[ok] Config written") {
+		t.Errorf("expected config written message, got: %s", output)
+	}
+}
+
+// --- writePkgMgrConfig error paths ---
+
+func TestWritePkgMgrConfigPypiMkdirError(t *testing.T) {
+	home := t.TempDir()
+	cfgDir, _ := PipConfigPaths(home, testLinux)
+	// Create a file where the directory should be to trigger MkdirAll error.
+	if err := os.MkdirAll(filepath.Dir(cfgDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgDir, []byte("block"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := pypiProxyInfo()
+	var buf bytes.Buffer
+	writePkgMgrConfig(p, home, testLinux, &buf)
+	if !strings.Contains(buf.String(), "[warn]") {
+		t.Errorf("expected warning, got: %s", buf.String())
+	}
+}
+
+func TestWritePkgMgrConfigMavenMkdirError(t *testing.T) {
+	home := t.TempDir()
+	// Create .m2 as a file instead of directory.
+	if err := os.WriteFile(filepath.Join(home, ".m2"), []byte("block"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := mavenProxyInfo()
+	var buf bytes.Buffer
+	writePkgMgrConfig(p, home, testLinux, &buf)
+	if !strings.Contains(buf.String(), "[warn]") {
+		t.Errorf("expected warning, got: %s", buf.String())
+	}
+}
+
+func TestWritePkgMgrConfigNpm(t *testing.T) {
+	p := testProxyInfo()
+	var buf bytes.Buffer
+	writePkgMgrConfig(p, t.TempDir(), testLinux, &buf)
+	if !strings.Contains(buf.String(), "[info] npm registry") {
+		t.Errorf("expected npm info message, got: %s", buf.String())
+	}
+}
+
+// --- writeAutostartFile edge cases ---
+
+func TestWriteAutostartFileUnsupportedOS(t *testing.T) {
+	p := testProxyInfo()
+	paths := ResolvePaths(p, t.TempDir(), testLinux)
+	var buf bytes.Buffer
+	writeAutostartFile(p, paths, t.TempDir(), testFreeBSD, &buf)
+	if !strings.Contains(buf.String(), "not supported") {
+		t.Errorf("expected unsupported message, got: %s", buf.String())
+	}
+}
+
+func TestWriteAutostartFileMkdirError(t *testing.T) {
+	home := t.TempDir()
+	p := testProxyInfo()
+	paths := ResolvePaths(p, home, testLinux)
+	// Block the autostart directory by creating a file with its name.
+	dir := AutostartDir(testLinux, home)
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir, []byte("block"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	writeAutostartFile(p, paths, home, testLinux, &buf)
+	if !strings.Contains(buf.String(), "[warn]") {
+		t.Errorf("expected warning, got: %s", buf.String())
 	}
 }

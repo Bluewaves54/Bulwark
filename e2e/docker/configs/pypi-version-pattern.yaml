@@ -1,4 +1,4 @@
-# PyPI PKGuard — version_patterns deny rule.
+# PyPI Bulwark — version_patterns deny rule.
 # Denies any version matching the pre-release regex pattern.
 # This exercises the version_patterns rule engine path distinct from block_pre_release.
 server:

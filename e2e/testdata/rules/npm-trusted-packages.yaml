@@ -1,4 +1,4 @@
-# npm PKGuard — e2e trusted packages configuration.
+# npm Bulwark — e2e trusted packages configuration.
 # Blocks install scripts globally but trusts @types/* scoped packages.
 # @types/node has no install scripts but this confirms trusted bypass works
 # for all rules (pre-release, age, etc.).

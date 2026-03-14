@@ -1,4 +1,4 @@
-# npm PKGuard — trusted packages + install scripts deny.
+# npm Bulwark — trusted packages + install scripts deny.
 # Trusts @types/* (bypasses all rules) while blocking install scripts globally.
 # Also blocks everything else with age 10000 + pre-release block.
 server:

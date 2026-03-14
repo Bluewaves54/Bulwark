@@ -1,4 +1,4 @@
-# PyPI PKGuard — explicit deny rule (action: deny).
+# PyPI Bulwark — explicit deny rule (action: deny).
 # Completely denies all versions of urllib3; other packages pass.
 server:
   port: 8080

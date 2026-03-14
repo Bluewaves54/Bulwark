@@ -1,4 +1,4 @@
-# npm PKGuard — e2e block pre-release configuration.
+# npm Bulwark — e2e block pre-release configuration.
 
 server:
   port: 18201

@@ -18,9 +18,9 @@ jobs:
       matrix:
         module:
           - common
-          - pypi-pkguard
-          - npm-pkguard
-          - maven-pkguard
+          - pypi-bulwark
+          - npm-bulwark
+          - maven-bulwark
 
     steps:
       - uses: actions/checkout@v4
@@ -58,9 +58,9 @@ jobs:
       matrix:
         module:
           - common
-          - pypi-pkguard
-          - npm-pkguard
-          - maven-pkguard
+          - pypi-bulwark
+          - npm-bulwark
+          - maven-bulwark
 
     steps:
       - uses: actions/checkout@v4
@@ -85,9 +85,9 @@ jobs:
       fail-fast: false
       matrix:
         proxy:
-          - pypi-pkguard
-          - npm-pkguard
-          - maven-pkguard
+          - pypi-bulwark
+          - npm-bulwark
+          - maven-bulwark
 
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +95,7 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -f ${{ matrix.proxy }}/Dockerfile \
-            -t pkguard-${{ matrix.proxy }}:${{ github.sha }} .
+            -t bulwark-${{ matrix.proxy }}:${{ github.sha }} .
 
   e2e-live:
     name: Live E2E tests (Topology A)
@@ -114,15 +114,15 @@ jobs:
       - name: Build proxy modules (needed by e2e TestMain)
         run: |
           (cd common && go mod download)
-          (cd pypi-pkguard && go mod download)
-          (cd npm-pkguard && go mod download)
-          (cd maven-pkguard && go mod download)
+          (cd pypi-bulwark && go mod download)
+          (cd npm-bulwark && go mod download)
+          (cd maven-bulwark && go mod download)
           (cd e2e && go mod download)
 
       - name: Run live e2e tests
         working-directory: e2e
         env:
-          PKGUARD_E2E_LIVE: "true"
+          BULWARK_E2E_LIVE: "true"
         run: |
           go test -v -tags=e2e -timeout=5m ./...
 

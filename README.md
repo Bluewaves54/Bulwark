@@ -1,6 +1,6 @@
-# PKGuard
+# Bulwark
 
-**PKGuard** is a lightweight, zero-dependency security gateway that sits between your package managers and public registries (PyPI, npm, Maven Central). It inspects every package request against configurable policy rules and blocks anything risky — **before it reaches your developers or CI pipeline**.
+**Bulwark** is a lightweight, zero-dependency security gateway that sits between your package managers and public registries (PyPI, npm, Maven Central). It inspects every package request against configurable policy rules and blocks anything risky — **before it reaches your developers or CI pipeline**.
 
 No database. No UI. No vendor lock-in. Just a single Go binary per ecosystem, a YAML config file, and full control over your software supply chain.
 
@@ -15,17 +15,17 @@ The risk is getting worse. AI agents have lowered the barrier to development —
 Teams face three choices:
 1. **Do nothing** — trust the open-source ecosystem. Fast, but completely unprotected.
 2. **Buy a commercial platform** — enterprise artifact repositories and SCA scanners exist. You get controls, but at significant cost with opaque rule engines and vendor lock-in.
-3. **PKGuard** — a transparent, self-hosted policy layer *you* own. Write rules in YAML. Version-control them. Deploy on Friday afternoon. Immediately protect your org.
+3. **Bulwark** — a transparent, self-hosted policy layer *you* own. Write rules in YAML. Version-control them. Deploy on Friday afternoon. Immediately protect your org.
 
-We built PKGuard as an open-source answer to option 3.
+We built Bulwark as an open-source answer to option 3.
 
 ---
 
 ## The 5-Minute Demo: See It Filter Packages in Real-Time
 
-This is the "aha moment" — watch PKGuard automatically apply safety rules to protect your package stream.
+This is the "aha moment" — watch Bulwark automatically apply safety rules to protect your package stream.
 
-**Step 1: Start PKGuard**
+**Step 1: Start Bulwark**
 
 ```bash
 docker-compose -f docker-compose.demo.yml up -d
@@ -48,7 +48,7 @@ npm config set registry http://localhost:18001/
 npm install lodash
 ```
 
-This succeeds. `lodash` is years old and passes PKGuard's 7-day minimum age check.
+This succeeds. `lodash` is years old and passes Bulwark's 7-day minimum age check.
 
 **Step 4: Try a Known-Malicious Package (Blocked by Policy)**
 
@@ -56,7 +56,7 @@ This succeeds. `lodash` is years old and passes PKGuard's 7-day minimum age chec
 npm install event-stream
 ```
 
-This fails. `event-stream` is on the deny list ([compromised in 2018](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident)), so PKGuard blocks it before any code reaches your machine.
+This fails. `event-stream` is on the deny list ([compromised in 2018](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident)), so Bulwark blocks it before any code reaches your machine.
 
 **Step 5: Try a Package with Install Scripts (Blocked by Policy)**
 
@@ -64,7 +64,7 @@ This fails. `event-stream` is on the deny list ([compromised in 2018](https://bl
 npm install bcrypt
 ```
 
-This fails. `bcrypt` has native `install` scripts in every published version, and it isn't in the trusted allowlist. PKGuard strips all those versions, leaving nothing installable. Your policies are enforced at the network level — no potentially malicious scripts execute.
+This fails. `bcrypt` has native `install` scripts in every published version, and it isn't in the trusted allowlist. Bulwark strips all those versions, leaving nothing installable. Your policies are enforced at the network level — no potentially malicious scripts execute.
 
 **Step 6: Try a Typosquatted Package (Blocked by Policy)**
 
@@ -72,7 +72,7 @@ This fails. `bcrypt` has native `install` scripts in every published version, an
 npm install loadsh
 ```
 
-This fails. `loadsh` is 1 edit away from `lodash` — a textbook typosquat. PKGuard's Levenshtein distance check catches it automatically and blocks the install. Real supply chain attacks [use exactly this technique](https://blog.phylum.io/typosquatting-campaign-targets-popular-npm-packages/).
+This fails. `loadsh` is 1 edit away from `lodash` — a textbook typosquat. Bulwark's Levenshtein distance check catches it automatically and blocks the install. Real supply chain attacks [use exactly this technique](https://blog.phylum.io/typosquatting-campaign-targets-popular-npm-packages/).
 
 **Step 7: Try a Brand-New Package**
 
@@ -80,7 +80,7 @@ This fails. `loadsh` is 1 edit away from `lodash` — a textbook typosquat. PKGu
 npm install any-package-published-today
 ```
 
-This fails. Even if legitimate, PKGuard's 7-day quarantine window blocks it by default. This prevents zero-day exploits before the community has time to discover them.
+This fails. Even if legitimate, Bulwark's 7-day quarantine window blocks it by default. This prevents zero-day exploits before the community has time to discover them.
 
 To clean up:
 ```bash
@@ -88,7 +88,7 @@ docker-compose -f docker-compose.demo.yml down
 npm config delete registry  # restore default npm registry
 
 # Remove the Docker images built during the demo
-docker rmi pkguard-npm:latest pkguard-pypi:latest pkguard-maven:latest 2>/dev/null
+docker rmi bulwark-npm:latest bulwark-pypi:latest bulwark-maven:latest 2>/dev/null
 # Remove any dangling build cache
 docker builder prune -f
 ```
@@ -101,21 +101,21 @@ When a package request arrives:
 
 1. **Package check:** Does the package name match your deny lists? Is it typosquatted? Does it look suspicious? **Block immediately if any rule fires.**
 
-2. **Version filtering:** For allowed packages, PKGuard fetches the version list from the upstream registry and filters each version:
+2. **Version filtering:** For allowed packages, Bulwark fetches the version list from the upstream registry and filters each version:
    - **Too new?** Block if published < N days ago (quarantine window for zero-days).
    - **Pre-release?** Block alpha/beta/RC if your policy says so.
    - **Install scripts?** Block npm `preinstall`/`postinstall` scripts unless whitelisted.
    - **Regex patterns?** Block versions matching custom patterns (e.g., anything with "rc" or "dev").
    - **Pinned approved?** Bypass age/other checks if you've explicitly approved the exact version.
 
-3. **Response rewriting:** Remove blocked versions from the response. When *some* versions pass policy, the filtered response is returned normally. When a package is entirely blocked (package-level deny or all versions removed), PKGuard returns **HTTP 403** with a clear policy reason so your package manager displays a meaningful error instead of a confusing "no versions found" message.
+3. **Response rewriting:** Remove blocked versions from the response. When *some* versions pass policy, the filtered response is returned normally. When a package is entirely blocked (package-level deny or all versions removed), Bulwark returns **HTTP 403** with a clear policy reason so your package manager displays a meaningful error instead of a confusing "no versions found" message.
 
 4. **Caching:** Cache filtered responses in memory (configurable TTL) so repeated requests don't hit the upstream registry repeatedly.
 
 **Result:** A single Go binary, YAML config, and your package managers now have transparent, auditable supply chain protection.
 
 
-**When to choose PKGuard:** You want immediate, transparent control without committing to a commercial platform. You're comfortable without a CVE feed today (layerable later).
+**When to choose Bulwark:** You want immediate, transparent control without committing to a commercial platform. You're comfortable without a CVE feed today (layerable later).
 
 **When commercial makes sense:** You need a constantly-updated CVE feed with SLA-backed updates.
 
@@ -125,17 +125,17 @@ When a package request arrives:
 
 ### Option A: Direct Proxy (Tested)
 
-Point your package managers directly at PKGuard. Simplest setup, most transparent.
+Point your package managers directly at Bulwark. Simplest setup, most transparent.
 
 ```
-Developer → npm/pip/mvn → PKGuard → PyPI/npm/Maven Central
+Developer → npm/pip/mvn → Bulwark → PyPI/npm/Maven Central
 ```
 
 ### Option B: Behind Enterprise Registry (Not tested yet, but should work as is)
-Keep your existing enterprise registry (any artifact repository that supports remote/proxy repositories). Reconfigure its remote/proxy to fetch through PKGuard. No developer client changes needed. **Feedback welcome — report your findings if you deploy this.**
+Keep your existing enterprise registry (any artifact repository that supports remote/proxy repositories). Reconfigure its remote/proxy to fetch through Bulwark. No developer client changes needed. **Feedback welcome — report your findings if you deploy this.**
 
 ```
-Developer → npm/pip/mvn → Enterprise Registry → PKGuard → PyPI/npm/Maven Central
+Developer → npm/pip/mvn → Enterprise Registry → Bulwark → PyPI/npm/Maven Central
 ```
 
 ---
@@ -167,30 +167,30 @@ The fastest way to get started. The installer downloads the correct binary for y
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.ps1 | iex
 ```
 
 **Install specific ecosystems only:**
 
 ```bash
 # macOS / Linux — install only the npm and pypi proxies:
-curl -fsSL https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.sh | bash -s -- npm pypi
+curl -fsSL https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.sh | bash -s -- npm pypi
 
 # Windows — install only maven:
-& { irm https://raw.githubusercontent.com/Bluewaves54/PKGuard/main/scripts/install.ps1 } maven
+& { irm https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.ps1 } maven
 ```
 
 **What the installer does:**
 
 1. Downloads the correct binary for your OS and architecture.
-2. Copies it to `~/.pkguard/bin/<ecosystem>-pkguard`.
-3. Writes the best-practices config to `~/.pkguard/<ecosystem>-pkguard/config.yaml`.
+2. Copies it to `~/.bulwark/bin/<ecosystem>-bulwark`.
+3. Writes the best-practices config to `~/.bulwark/<ecosystem>-bulwark/config.yaml`.
 4. Configures your package manager (npm registry, pip index-url, Maven mirror).
 5. Creates an autostart entry (macOS LaunchAgent, Linux systemd user service, Windows Startup batch).
 
@@ -200,32 +200,32 @@ Edit the config file for the ecosystem you want to change:
 
 ```bash
 # npm rules:
-nano ~/.pkguard/npm-pkguard/config.yaml
+nano ~/.bulwark/npm-bulwark/config.yaml
 
 # pypi rules:
-nano ~/.pkguard/pypi-pkguard/config.yaml
+nano ~/.bulwark/pypi-bulwark/config.yaml
 
 # maven rules:
-nano ~/.pkguard/maven-pkguard/config.yaml
+nano ~/.bulwark/maven-bulwark/config.yaml
 ```
 
 The service restarts automatically on reboot. To apply changes immediately, restart the proxy using the `-setup` flag or restart the service:
 
 ```bash
 # macOS:
-launchctl unload ~/Library/LaunchAgents/com.pkguard.npm.plist
-launchctl load ~/Library/LaunchAgents/com.pkguard.npm.plist
+launchctl unload ~/Library/LaunchAgents/com.bulwark.npm.plist
+launchctl load ~/Library/LaunchAgents/com.bulwark.npm.plist
 
 # Linux:
-systemctl --user restart pkguard-npm.service
+systemctl --user restart bulwark-npm.service
 ```
 
 **Uninstalling:**
 
 ```bash
-~/.pkguard/bin/npm-pkguard -uninstall
-~/.pkguard/bin/pypi-pkguard -uninstall
-~/.pkguard/bin/maven-pkguard -uninstall
+~/.bulwark/bin/npm-bulwark -uninstall
+~/.bulwark/bin/pypi-bulwark -uninstall
+~/.bulwark/bin/maven-bulwark -uninstall
 ```
 
 The uninstall command restores your original package manager configuration (npm registry, Maven settings.xml backup).
@@ -233,11 +233,11 @@ The uninstall command restores your original package manager configuration (npm 
 **Using the `-setup` flag directly (if you already have the binary):**
 
 ```bash
-./npm-pkguard -setup      # Install with best-practices config
-./npm-pkguard -uninstall   # Remove everything
+./npm-bulwark -setup      # Install with best-practices config
+./npm-bulwark -uninstall   # Remove everything
 ```
 
-### Option 2: Download Pre-Built Binary
+### Option 2: Download Pre-Built Binary (Zero-Config)
 
 Pre-built binaries are available for every release on the [GitHub Releases](../../releases) page.
 
@@ -247,19 +247,26 @@ Pre-built binaries are available for every release on the [GitHub Releases](../.
 | macOS | amd64 (Intel), arm64 (Apple Silicon) |
 | Windows | amd64, arm64 |
 
-**Quick start (example: npm proxy on Linux amd64):**
+**Quick start — just download and run:**
 
 ```bash
-# Download the binary and best-practices config from the latest release
-curl -LO https://github.com/Bluewaves54/PKGuard/releases/latest/download/npm-pkguard-linux-amd64
-curl -LO https://github.com/Bluewaves54/PKGuard/releases/latest/download/npm-pkguard-config-best-practices.yaml
-chmod +x npm-pkguard-linux-amd64
+# Download the binary
+curl -LO https://github.com/Bluewaves54/Bulwark/releases/latest/download/npm-bulwark-linux-amd64
+chmod +x npm-bulwark-linux-amd64
 
-# Run it
-./npm-pkguard-linux-amd64 -config npm-pkguard-config-best-practices.yaml
+# Run it — first launch automatically sets up everything:
+./npm-bulwark-linux-amd64
 ```
 
-On macOS use `darwin-arm64`, on Windows use `npm-pkguard-windows-amd64.exe`.
+On first run the binary detects that no config exists, performs a full setup (writes best-practices config to `~/.bulwark/<ecosystem>-bulwark/config.yaml`, configures your package manager, and creates an autostart entry), then starts the proxy. No extra downloads or terminal commands needed.
+
+To use a custom config instead of the auto-installed one:
+
+```bash
+./npm-bulwark-linux-amd64 -config my-custom-config.yaml
+```
+
+On macOS use `darwin-arm64`, on Windows use `npm-bulwark-windows-amd64.exe`.
 
 ### Option 3: Best Practices Config (Build from Source)
 
@@ -267,16 +274,16 @@ Each ecosystem includes a `config-best-practices.yaml` — a production-ready po
 
 | Config | What's included |
 |--------|----------------|
-| `npm-pkguard/config-best-practices.yaml` | 38 known-malicious/typosquatted packages blocked, install script deny with allowlist (esbuild, node-gyp, sharp), typosquat detection (Levenshtein) protecting lodash/express/react/axios/etc., 7-day age quarantine, pre-release blocking, trusted scopes (@types/\*, @babel/\*, @angular/\*) |
-| `pypi-pkguard/config-best-practices.yaml` | 42 known-malicious/typosquatted packages blocked (colourama, python3-dateutil, noblesse, ctx, etc.), 7-day age quarantine, pre-release blocking, trusted packages (pip, setuptools, numpy\*, django\*, flask\*, requests) |
-| `maven-pkguard/config-best-practices.yaml` | 15 malicious/impersonation artifacts blocked (Log4Shell impersonators, namespace squatting on Spring/Apache/AWS SDK), SNAPSHOT blocking, 7-day age quarantine, pre-release blocking, trusted groups (org.apache.\*, org.springframework.\*, com.google.\*) |
+| `npm-bulwark/config-best-practices.yaml` | 38 known-malicious/typosquatted packages blocked, install script deny with allowlist (esbuild, node-gyp, sharp), typosquat detection (Levenshtein) protecting lodash/express/react/axios/etc., 7-day age quarantine, pre-release blocking, trusted scopes (@types/\*, @babel/\*, @angular/\*) |
+| `pypi-bulwark/config-best-practices.yaml` | 42 known-malicious/typosquatted packages blocked (colourama, python3-dateutil, noblesse, ctx, etc.), 7-day age quarantine, pre-release blocking, trusted packages (pip, setuptools, numpy\*, django\*, flask\*, requests) |
+| `maven-bulwark/config-best-practices.yaml` | 15 malicious/impersonation artifacts blocked (Log4Shell impersonators, namespace squatting on Spring/Apache/AWS SDK), SNAPSHOT blocking, 7-day age quarantine, pre-release blocking, trusted groups (org.apache.\*, org.springframework.\*, com.google.\*) |
 
 **Deploy on Friday and immediately protect your org:**
 
 ```bash
-cd npm-pkguard
-go build -o bin/npm-pkguard .
-./bin/npm-pkguard -config config-best-practices.yaml
+cd npm-bulwark
+go build -o bin/npm-bulwark .
+./bin/npm-bulwark -config config-best-practices.yaml
 ```
 
 Then configure npm:
@@ -290,7 +297,7 @@ npm install event-stream  # Blocked (known malware)
 
 **PyPI** (port 18000):
 ```bash
-cd pypi-pkguard && go build -o bin/pypi-pkguard . && ./bin/pypi-pkguard -config config.yaml
+cd pypi-bulwark && go build -o bin/pypi-bulwark . && ./bin/pypi-bulwark -config config.yaml
 ```
 
 ```ini
@@ -301,7 +308,7 @@ index-url = http://localhost:18000/simple/
 
 **npm** (port 18001):
 ```bash
-cd npm-pkguard && go build -o bin/npm-pkguard . && ./bin/npm-pkguard -config config.yaml
+cd npm-bulwark && go build -o bin/npm-bulwark . && ./bin/npm-bulwark -config config.yaml
 ```
 
 ```bash
@@ -310,7 +317,7 @@ npm config set registry http://localhost:18001/
 
 **Maven** (port 18002):
 ```bash
-cd maven-pkguard && go build -o bin/maven-pkguard . && ./bin/maven-pkguard -config config.yaml
+cd maven-bulwark && go build -o bin/maven-bulwark . && ./bin/maven-bulwark -config config.yaml
 ```
 
 ```xml
@@ -318,7 +325,7 @@ cd maven-pkguard && go build -o bin/maven-pkguard . && ./bin/maven-pkguard -conf
 <settings>
   <mirrors>
     <mirror>
-      <id>pkguard-maven</id>
+      <id>bulwark-maven</id>
       <mirrorOf>central</mirrorOf>
       <url>http://localhost:18002</url>
     </mirror>
@@ -330,12 +337,12 @@ cd maven-pkguard && go build -o bin/maven-pkguard . && ./bin/maven-pkguard -conf
 
 ```bash
 # Build
-docker build -f npm-pkguard/Dockerfile -t pkguard-npm:latest .
+docker build -f npm-bulwark/Dockerfile -t bulwark-npm:latest .
 
 # Run with best practices config
 docker run -p 18001:18001 \
-  -v $(pwd)/npm-pkguard/config-best-practices.yaml:/app/config.yaml \
-  pkguard-npm:latest
+  -v $(pwd)/npm-bulwark/config-best-practices.yaml:/app/config.yaml \
+  bulwark-npm:latest
 ```
 
 Or use the demo Compose setup:
@@ -346,9 +353,9 @@ docker-compose -f docker-compose.demo.yml up -d
 ### Option 6: Kubernetes
 
 ```bash
-kubectl apply -f k8s/npm-pkguard/
-kubectl apply -f k8s/pypi-pkguard/
-kubectl apply -f k8s/maven-pkguard/
+kubectl apply -f k8s/npm-bulwark/
+kubectl apply -f k8s/pypi-bulwark/
+kubectl apply -f k8s/maven-bulwark/
 ```
 
 ---
@@ -395,19 +402,19 @@ policy:
 | Variable               | Description                      |
 |------------------------|----------------------------------|
 | `PORT`                 | Override `server.port`           |
-| `PKGUARD_AUTH_TOKEN`   | Bearer token for upstream auth   |
-| `PKGUARD_AUTH_USERNAME`| Basic-auth username              |
-| `PKGUARD_AUTH_PASSWORD`| Basic-auth password              |
+| `BULWARK_AUTH_TOKEN`   | Bearer token for upstream auth   |
+| `BULWARK_AUTH_USERNAME`| Basic-auth username              |
+| `BULWARK_AUTH_PASSWORD`| Basic-auth password              |
 
 ### Logging
 
-PKGuard uses Go's `log/slog` for structured logging with configurable levels, optional disk output, and runtime level changes.
+Bulwark uses Go's `log/slog` for structured logging with configurable levels, optional disk output, and runtime level changes.
 
 ```yaml
 logging:
   level: "info"          # debug | info | warn | error
   format: "text"         # text | json
-  file_path: "/var/log/pkguard/npm.log"  # optional; logs also written to this file
+  file_path: "/var/log/bulwark/npm.log"  # optional; logs also written to this file
 ```
 
 When `file_path` is set, log output is written to **both** stdout and the specified file using `io.MultiWriter`.
@@ -434,7 +441,7 @@ Blocked packages are logged with structured fields including the package name, v
 ### Unit Tests
 
 ```bash
-for mod in common npm-pkguard pypi-pkguard maven-pkguard; do
+for mod in common npm-bulwark pypi-bulwark maven-bulwark; do
   (cd $mod && go test -count=1 -race -coverprofile=coverage.out ./... && \
    go tool cover -func=coverage.out | grep "^total:")
 done

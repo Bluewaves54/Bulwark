@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package rules implements the PKGuard policy rule engine. It evaluates package
+// Package rules implements the Bulwark policy rule engine. It evaluates package
 // and version requests against a set of configured PackageRules and returns a
 // FilterDecision indicating whether the item should be allowed or denied.
 package rules
@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode"
 
-	"PKGuard/common/config"
+	"Bulwark/common/config"
 )
 
 // FilterDecision is the result of evaluating a package or version against the rule engine.

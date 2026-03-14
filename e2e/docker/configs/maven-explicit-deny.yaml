@@ -1,4 +1,4 @@
-# Maven PKGuard — explicit deny rule (action: deny).
+# Maven Bulwark — explicit deny rule (action: deny).
 # Completely denies all versions of junit:junit; commons-io passes.
 server:
   port: 8080

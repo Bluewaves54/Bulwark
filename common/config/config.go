@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package config defines the shared configuration structures and loading logic
-// used by all pkguard proxy modules (pypi-pkguard, npm-pkguard, maven-pkguard).
+// used by all bulwark proxy modules (pypi-bulwark, npm-bulwark, maven-bulwark).
 package config
 
 import (
@@ -278,13 +278,13 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.Server.Port = port
 		}
 	}
-	if v := os.Getenv("PKGUARD_AUTH_TOKEN"); v != "" {
+	if v := os.Getenv("BULWARK_AUTH_TOKEN"); v != "" {
 		cfg.Upstream.Token = v
 	}
-	if v := os.Getenv("PKGUARD_AUTH_USERNAME"); v != "" {
+	if v := os.Getenv("BULWARK_AUTH_USERNAME"); v != "" {
 		cfg.Upstream.Username = v
 	}
-	if v := os.Getenv("PKGUARD_AUTH_PASSWORD"); v != "" {
+	if v := os.Getenv("BULWARK_AUTH_PASSWORD"); v != "" {
 		cfg.Upstream.Password = v
 	}
 }
