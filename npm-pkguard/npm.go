@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	hdrContentType = "Content-Type"
-	mimeJSON       = "application/json"
-	errMsgUpstream = "upstream error"
+	hdrContentType    = "Content-Type"
+	mimeJSON          = "application/json"
+	errMsgUpstream    = "upstream error"
+	blockReasonAllVer = "all available versions blocked by policy"
 )
 
 // handleHealth returns 200 OK for liveness checks.
@@ -117,7 +118,7 @@ func (s *Server) handlePackument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filtered, removed, err := filterNpmPackument(body, pkg, s.engine, s.cfg.Upstream.URL, s.logger)
+	filtered, removed, blockReason, err := filterNpmPackument(body, pkg, s.engine, s.cfg.Upstream.URL, s.logger)
 	if err != nil {
 		s.logger.Warn("filtering packument failed",
 			slog.String("package", pkg),
@@ -138,6 +139,20 @@ func (s *Server) handlePackument(w http.ResponseWriter, r *http.Request) {
 	if ct == "" {
 		ct = mimeJSON
 	}
+
+	// When the entire package is blocked, return 403 with a structured error
+	// so that npm displays the policy reason instead of a confusing ENOVERSIONS.
+	if blockReason != "" {
+		errBody := fmt.Sprintf(`{"error":"[PKGuard] %s: %s"}`, pkg, blockReason)
+		entry := &rules.CacheEntry{Body: []byte(errBody), ContentType: mimeJSON, StatusCode: http.StatusForbidden}
+		s.cache.Set(cacheKey, entry)
+		w.Header().Set(hdrContentType, mimeJSON)
+		w.Header().Set("X-Cache", "MISS")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(errBody)) //nolint:errcheck
+		return
+	}
+
 	entry := &rules.CacheEntry{Body: filtered, ContentType: ct, StatusCode: http.StatusOK}
 	s.cache.Set(cacheKey, entry)
 
@@ -162,6 +177,11 @@ func (s *Server) handleTarball(w http.ResponseWriter, r *http.Request) {
 	pkgDec := s.engine.EvaluatePackage(pkgMeta)
 	if !pkgDec.Allow {
 		s.reqDenied.Add(1)
+		s.logger.Info("tarball package blocked",
+			slog.String("package", pkg),
+			slog.String("rule", pkgDec.RuleName),
+			slog.String("reason", pkgDec.Reason),
+		)
 		http.Error(w, "package blocked by policy", http.StatusForbidden)
 		return
 	}
@@ -185,6 +205,12 @@ func (s *Server) handleTarball(w http.ResponseWriter, r *http.Request) {
 		dec := s.engine.EvaluateVersion(pkgMeta, ver)
 		if !dec.Allow {
 			s.reqDenied.Add(1)
+			s.logger.Info("tarball version blocked",
+				slog.String("package", pkg),
+				slog.String("version", version),
+				slog.String("rule", dec.RuleName),
+				slog.String("reason", dec.Reason),
+			)
 			http.Error(w, "version blocked by policy", http.StatusForbidden)
 			return
 		}
@@ -279,11 +305,12 @@ type npmPackument struct {
 }
 
 // filterNpmPackument removes denied versions from a packument and rewrites tarball URLs.
-// Returns the filtered bytes, the count of removed versions, and any error.
-func filterNpmPackument(body []byte, pkgName string, engine *rules.RuleEngine, proxyBase string, logger *slog.Logger) ([]byte, int, error) {
+// Returns the filtered bytes, the count of removed versions, a block reason
+// (non-empty when the entire package should be denied), and any error.
+func filterNpmPackument(body []byte, pkgName string, engine *rules.RuleEngine, proxyBase string, logger *slog.Logger) ([]byte, int, string, error) {
 	var p npmPackument
 	if err := json.Unmarshal(body, &p); err != nil {
-		return nil, 0, fmt.Errorf("parsing packument: %w", err)
+		return nil, 0, "", fmt.Errorf("parsing packument: %w", err)
 	}
 
 	allVersions := buildVersionMetas(p)
@@ -293,20 +320,26 @@ func filterNpmPackument(body []byte, pkgName string, engine *rules.RuleEngine, p
 	if !pkgDec.Allow && !pkgDec.DryRun {
 		logger.Info("package blocked by policy",
 			slog.String("package", pkgName),
+			slog.String("rule", pkgDec.RuleName),
 			slog.String("reason", pkgDec.Reason),
 		)
-		// Return an empty packument body.
 		empty := fmt.Sprintf(`{"name":%q,"versions":{},"dist-tags":{}}`, pkgName)
-		return []byte(empty), len(p.Versions), nil
+		return []byte(empty), len(p.Versions), pkgDec.Reason, nil
 	}
 
-	removed := applyVersionFilter(&p, pkgMeta, allVersions, engine)
+	removed := applyVersionFilter(&p, pkgMeta, allVersions, engine, logger)
+
+	// If all versions were removed by version-level rules, report a block reason.
+	if len(p.Versions) == 0 && removed > 0 {
+		empty := fmt.Sprintf(`{"name":%q,"versions":{},"dist-tags":{}}`, pkgName)
+		return []byte(empty), removed, blockReasonAllVer, nil
+	}
 
 	filtered, err := json.Marshal(p)
 	if err != nil {
-		return nil, 0, fmt.Errorf("re-marshalling packument: %w", err)
+		return nil, 0, "", fmt.Errorf("re-marshalling packument: %w", err)
 	}
-	return filtered, removed, nil
+	return filtered, removed, "", nil
 }
 
 // buildVersionMetas converts packument version timestamps into VersionMeta slices.
@@ -373,13 +406,19 @@ func extractVersionPolicyFields(raw json.RawMessage) (bool, string) {
 }
 
 // applyVersionFilter removes denied versions from p and returns the count removed.
-func applyVersionFilter(p *npmPackument, pkgMeta rules.PackageMeta, allVersions []rules.VersionMeta, engine *rules.RuleEngine) int {
+func applyVersionFilter(p *npmPackument, pkgMeta rules.PackageMeta, allVersions []rules.VersionMeta, engine *rules.RuleEngine, logger *slog.Logger) int {
 	removed := 0
 	for _, vm := range allVersions {
 		dec := engine.EvaluateVersion(pkgMeta, vm)
 		if dec.Allow || dec.DryRun {
 			continue
 		}
+		logger.Info("version blocked",
+			slog.String("package", pkgMeta.Name),
+			slog.String("version", vm.Version),
+			slog.String("rule", dec.RuleName),
+			slog.String("reason", dec.Reason),
+		)
 		delete(p.Versions, vm.Version)
 		delete(p.Time, vm.Version)
 		removed++

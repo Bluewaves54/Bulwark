@@ -1,6 +1,6 @@
 # PyPI PKGuard — Best Practices Configuration
 # Deploy this config on Friday and immediately protect your org.
-# Sensible defaults: blocks young packages (3 days), known malware, pre-releases.
+# Sensible defaults: blocks young packages (7 days), known malware, pre-releases.
 
 server:
   port: 18000
@@ -30,6 +30,7 @@ metrics:
 logging:
   level: "info"
   format: "text"
+  # file_path: "/var/log/pkguard/pypi.log"
 
 policy:
   dry_run: false
@@ -40,11 +41,11 @@ policy:
     - "setuptools"
     - "wheel"
     - "build"
-    - "numpy*"
-    - "scipy*"
-    - "pandas*"
-    - "django*"
-    - "flask*"
+    - "numpy"
+    - "scipy"
+    - "pandas"
+    - "django"
+    - "flask"
     - "requests"
     - "pytest"
     - "black"
@@ -65,49 +66,17 @@ policy:
     - name: "block-known-malware"
       action: "deny"
       package_patterns:
-        # Typosquats of popular packages
-        - "python3-dateutil"      # typosquat of python-dateutil (2019)
-        - "python-dateutil-fake"  # typosquat of python-dateutil
-        - "jeIlyfish"             # typosquat of jellyfish (capital I for l, 2019)
-        - "colourama"             # typosquat of colorama (2019)
-        - "colorsama"             # typosquat of colorama
-        - "requessts"             # typosquat of requests
-        - "requst"                # typosquat of requests
-        - "reequests"             # typosquat of requests
-        - "beautifulsoup"         # typosquat of beautifulsoup4
-        - "beautifulsoup4-malware" # impersonation of beautifulsoup4
-        - "pythonkafka"           # typosquat of python-kafka
-        - "python-mongo"          # typosquat of pymongo
-        - "urllib"                # typosquat of urllib3
-        - "urlib3"                # typosquat of urllib3
-        - "psychopg2"             # typosquat of psycopg2
-        - "djanga"                # typosquat of django
-        - "dajngo"                # typosquat of django
-        - "openvc-python"         # typosquat of opencv-python
-        - "nmap-python"           # typosquat of python-nmap
-        - "pylnit"                # typosquat of pylint
-        - "pyymal"                # typosquat of pyyaml
-        - "pyjoson"               # typosquat of pyjson
-
-        # Confirmed malicious (stealers, RATs, cryptominers)
+        # High-confidence malicious / compromised packages
+        - "python3-dateutil"      # known malicious typosquat campaign
+        - "jeIlyfish"             # known malicious typosquat campaign
+        - "colourama"             # known malicious typosquat campaign
+        - "ctx"                   # compromised package incident
+        - "phpass"                # compromised package incident
         - "noblesse"              # 2021 — Discord token + credit card stealer
-        - "genesisbot"            # 2021 — stealer
-        - "artic"                 # 2021 — stealer
-        - "creamsicle"            # 2021 — stealer
-        - "discordcmd"            # Discord token stealer
-        - "colourfool"            # 2023 — RAT
-        - "daboralib"             # 2023 — stealer
-        - "pystob"                # stealer
-        - "easytimestamp"         # trojan
-        - "keylogger"             # keylogger
-        - "cryptominer"           # cryptominer
-        - "ctx"                   # 2022 — hijacked, stole env vars + AWS keys
-        - "phpass"                # 2022 — hijacked, stole AWS keys
-        - "maboroshi"             # 2023 — stealer
+        - "colourfool"            # 2023 — RAT (documented by Fortinet)
+        - "secretslib"            # 2022 — cryptominer via Kubernetes (Checkmarx)
         - "culturestreak"         # 2023 — cryptominer targeting GitLab CI
-        - "secretslib"            # 2022 — dropped cryptominer via Kubernetes
-        - "libpeshka"             # 2023 — stealer
-        - "pyloras"               # 2023 — stealer
-        - "pybmpipe"             # typosquat deploying W4SP stealer
         - "chatgpt-python"        # 2023 — impersonation, stealer
+        - "pybmpipe"              # W4SP stealer campaign
+        - "discordcmd"            # Discord token stealer
       reason: "Known malicious, compromised, or typosquatted package"

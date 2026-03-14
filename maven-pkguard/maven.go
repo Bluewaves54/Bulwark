@@ -22,6 +22,7 @@ const (
 	mimeJSON            = "application/json"
 	mimeXML             = "application/xml"
 	errFmtParseMetadata = "parsing maven-metadata.xml: %w"
+	blockReasonAllVer   = "all available versions blocked by policy"
 )
 
 // handleHealth returns 200 OK for liveness checks.
@@ -140,6 +141,17 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	allowed, denied := s.filterVersionList(pkgMeta, allVersions)
 	s.reqDenied.Add(int64(denied))
 
+	// When all versions are removed by version-level rules, return 403.
+	if len(allowed) == 0 && denied > 0 {
+		errMsg := fmt.Sprintf("[PKGuard] %s: %s", pkgName, blockReasonAllVer)
+		entry := &rules.CacheEntry{Body: []byte(errMsg), ContentType: "text/plain", StatusCode: http.StatusForbidden}
+		s.cache.Set(cacheKey, entry)
+		w.Header().Set(hdrContentType, "text/plain")
+		w.Header().Set("X-Cache", "MISS")
+		http.Error(w, errMsg, http.StatusForbidden)
+		return
+	}
+
 	filtered, fErr := FilterMetadataXML(body, allowed)
 	if fErr != nil {
 		s.logger.Warn("filtering maven-metadata.xml failed",
@@ -180,6 +192,12 @@ func (s *Server) filterVersionList(pkgMeta rules.PackageMeta, allVersions []rule
 				s.reqDryRun.Add(1)
 			}
 		} else {
+			s.logger.Info("version blocked",
+				slog.String("package", pkgMeta.Name),
+				slog.String("version", vm.Version),
+				slog.String("rule", dec.RuleName),
+				slog.String("reason", dec.Reason),
+			)
 			denied++
 		}
 	}
@@ -236,6 +254,13 @@ func (s *Server) handleArtifact(w http.ResponseWriter, r *http.Request) {
 		dec := s.engine.EvaluateVersion(pkgMeta, ver)
 		if !dec.Allow {
 			s.reqDenied.Add(1)
+			s.logger.Info("artifact version blocked",
+				slog.String("group", group),
+				slog.String("artifact", artifact),
+				slog.String("version", version),
+				slog.String("rule", dec.RuleName),
+				slog.String("reason", dec.Reason),
+			)
 			http.Error(w, "version blocked by policy", http.StatusForbidden)
 			return
 		}
@@ -260,6 +285,11 @@ func (s *Server) enforcePackagePolicy(w http.ResponseWriter, pkgMeta rules.Packa
 	pkgDec := s.engine.EvaluatePackage(pkgMeta)
 	if !pkgDec.Allow {
 		s.reqDenied.Add(denyCount)
+		s.logger.Info("package blocked by policy",
+			slog.String("package", pkgMeta.Name),
+			slog.String("rule", pkgDec.RuleName),
+			slog.String("reason", pkgDec.Reason),
+		)
 		http.Error(w, "package blocked by policy", http.StatusForbidden)
 		return true
 	}

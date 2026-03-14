@@ -81,8 +81,8 @@ func buildMavenTestServer(t *testing.T, upstreamURL string, policy config.Policy
 		Policy:   policy,
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, err := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -724,23 +724,9 @@ func TestMavenMetadataAgeBlockFiltersRecentVersions(t *testing.T) {
 		t.Fatalf(testErrGETMetadata, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("want 200, got %d", resp.StatusCode)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	result := string(body)
-
-	// All versions should be filtered because their timestamp is "now" (0 days old < 7).
-	if strings.Contains(result, "<version>1.0.0</version>") ||
-		strings.Contains(result, "<version>1.1.0</version>") ||
-		strings.Contains(result, "<version>2.0.0</version>") {
-		t.Error("age block: recent versions should have been filtered from metadata")
-	}
-
-	// <latest> and <release> should be empty when all versions are filtered.
-	if strings.Contains(result, "<latest>2.0.0</latest>") {
-		t.Error("age block: <latest> should not point to a filtered version")
+	// All versions are recent (0 days old < 7) → all blocked → 403.
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("age block all versions: want 403, got %d", resp.StatusCode)
 	}
 }
 
@@ -805,20 +791,9 @@ func TestMavenMetadataLatestRewrittenAfterAgeFilter(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	result := string(body)
-
-	// All versions age-blocked ⇒ <latest> and <release> should be empty.
-	if strings.Contains(result, "<latest>3.0.0</latest>") {
-		t.Error("<latest> should have been cleared because 3.0.0 was filtered")
-	}
-	if strings.Contains(result, "<release>3.0.0</release>") {
-		t.Error("<release> should have been cleared because 3.0.0 was filtered")
-	}
-
-	notice := resp.Header.Get(testHdrPolicyNotice)
-	if notice == "" {
-		t.Error("expected X-Curation-Policy-Notice header when versions are filtered")
+	// All versions age-blocked → 403.
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("age block all versions: want 403, got %d", resp.StatusCode)
 	}
 }
 

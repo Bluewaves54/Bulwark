@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,12 @@ import (
 	"PKGuard/common/config"
 	"PKGuard/common/rules"
 )
+
+// testErrorLogger returns a discard-level error logger for test helpers.
+func testErrorLogger() *slog.Logger {
+	l, _, _ := createLogger("text", "error", "")
+	return l
+}
 
 const (
 	testPkgLodash  = "lodash"
@@ -63,8 +70,8 @@ func buildTestServer(t *testing.T, upstreamURL string, policy config.PolicyConfi
 		Policy:   policy,
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, err := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -448,8 +455,8 @@ func TestNpmMetrics(t *testing.T) {
 		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, _ := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, _ := buildServer(cfg, logger, logLevel)
 	ts := httptest.NewServer(srv.mux)
 	defer ts.Close()
 
@@ -482,7 +489,7 @@ func TestIsTarballPath(t *testing.T) {
 }
 
 func TestFilterNpmPackumentInvalidJSON(t *testing.T) {
-	_, _, err := filterNpmPackument([]byte("not json"), "lodash", nil, "", nil)
+	_, _, _, err := filterNpmPackument([]byte("not json"), "lodash", nil, "", nil)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -527,13 +534,9 @@ func TestPackumentNamespaceBlocked(t *testing.T) {
 		t.Fatalf("GET namespace blocked: %v", err)
 	}
 	defer resp.Body.Close()
-	// Namespace violation returns filtered packument with empty versions.
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("namespace blocked: want 200 (filtered), got %d", resp.StatusCode)
-	}
-	// The header should indicate filtering.
-	if !strings.Contains(resp.Header.Get(hdrPolicyNotice), "filtered") {
-		t.Error("expected X-Curation-Policy-Notice for namespace violation")
+	// Namespace violation returns 403 with a policy reason.
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("namespace blocked: want 403, got %d", resp.StatusCode)
 	}
 }
 
@@ -556,7 +559,7 @@ func TestFilterNpmPackumentInstallScriptsRule(t *testing.T) {
 	}
 	engine := rules.New(policy)
 
-	_, removed, err := filterNpmPackument(packument, "evilpkg", engine, testUpstreamURL, createLogger("text", "error"))
+	_, removed, _, err := filterNpmPackument(packument, "evilpkg", engine, testUpstreamURL, testErrorLogger())
 	if err != nil {
 		t.Fatalf(testErrFilterPkg, err)
 	}
@@ -584,7 +587,7 @@ func TestFilterNpmPackumentLicenseRule(t *testing.T) {
 	}
 	engine := rules.New(policy)
 
-	_, removed, err := filterNpmPackument(packument, "gplpkg", engine, testUpstreamURL, createLogger("text", "error"))
+	_, removed, _, err := filterNpmPackument(packument, "gplpkg", engine, testUpstreamURL, testErrorLogger())
 	if err != nil {
 		t.Fatalf(testErrFilterPkg, err)
 	}
@@ -621,29 +624,10 @@ func TestNpmPackumentAgeBlockFiltersRecentVersions(t *testing.T) {
 		t.Fatalf(testErrGetPackument, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf(testFmtWant200, resp.StatusCode)
-	}
-
-	var doc struct {
-		Versions map[string]json.RawMessage `json:"versions"`
-		DistTags map[string]string          `json:"dist-tags"`
-	}
-	json.NewDecoder(resp.Body).Decode(&doc) //nolint:errcheck
-
 	// Both versions are only 1 day old; with a 7-day age rule, both should be removed.
-	if len(doc.Versions) != 0 {
-		t.Errorf("age block: want 0 versions, got %d", len(doc.Versions))
-	}
-
-	// The latest dist-tag should have been removed because its version was filtered.
-	if _, ok := doc.DistTags["latest"]; ok {
-		t.Error("age block: latest dist-tag should be removed when version is filtered")
-	}
-
-	notice := resp.Header.Get(hdrPolicyNotice)
-	if notice == "" {
-		t.Error("expected X-Curation-Policy-Notice header when versions are filtered")
+	// The proxy should return 403 since all versions are blocked.
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("age block all versions: want 403, got %d", resp.StatusCode)
 	}
 }
 
@@ -771,7 +755,7 @@ func TestFilterNpmPackumentTrustedBypassesInstallScripts(t *testing.T) {
 	}
 	engine := rules.New(policy)
 
-	_, removed, err := filterNpmPackument(packument, "esbuild", engine, testUpstreamURL, createLogger("text", "error"))
+	_, removed, _, err := filterNpmPackument(packument, "esbuild", engine, testUpstreamURL, testErrorLogger())
 	if err != nil {
 		t.Fatalf(testErrFilterPkg, err)
 	}
@@ -804,7 +788,7 @@ func TestFilterNpmPackumentTrustedScopeBypassesAllRules(t *testing.T) {
 	}
 	engine := rules.New(policy)
 
-	_, removed, err := filterNpmPackument(packument, "@types/node", engine, testUpstreamURL, createLogger("text", "error"))
+	_, removed, _, err := filterNpmPackument(packument, "@types/node", engine, testUpstreamURL, testErrorLogger())
 	if err != nil {
 		t.Fatalf(testErrFilterPkg, err)
 	}
@@ -839,7 +823,7 @@ func TestFilterNpmPackumentUntrustedWithScriptsBlocked(t *testing.T) {
 	}
 	engine := rules.New(policy)
 
-	_, removed, err := filterNpmPackument(packument, "sketchy", engine, testUpstreamURL, createLogger("text", "error"))
+	_, removed, _, err := filterNpmPackument(packument, "sketchy", engine, testUpstreamURL, testErrorLogger())
 	if err != nil {
 		t.Fatalf(testErrFilterPkg, err)
 	}
@@ -874,7 +858,7 @@ func TestFilterNpmPackumentAllowedWithScriptsAllowlist(t *testing.T) {
 	}
 	engine := rules.New(policy)
 
-	_, removed, err := filterNpmPackument(packument, "esbuild", engine, testUpstreamURL, createLogger("text", "error"))
+	_, removed, _, err := filterNpmPackument(packument, "esbuild", engine, testUpstreamURL, testErrorLogger())
 	if err != nil {
 		t.Fatalf(testErrFilterPkg, err)
 	}

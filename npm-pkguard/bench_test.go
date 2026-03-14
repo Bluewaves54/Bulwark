@@ -5,7 +5,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -82,9 +85,81 @@ func benchmarkNpmPackument(b *testing.B, n int) {
 	b.SetBytes(int64(len(body)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, err := filterNpmPackument(body, "lodash", benchNpmEngine, "http://localhost:18001", benchNpmLogger)
+		_, _, _, err := filterNpmPackument(body, "lodash", benchNpmEngine, "http://localhost:18001", benchNpmLogger)
 		if err != nil {
 			b.Fatalf(testErrFilterPkg, err)
 		}
+	}
+}
+
+// ─── End-to-end HTTP latency benchmarks ──────────────────────────────────────
+// These measure the full proxy overhead: HTTP handling + upstream fetch + filter +
+// cache. The mock upstream has ~zero latency, so the numbers represent
+// pure proxy-added overhead.
+
+func benchNpmE2ESetup(b *testing.B, n int) (proxyURL string, cleanup func()) {
+	b.Helper()
+	body := buildNpmPackumentBody("lodash", n)
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body) //nolint:errcheck
+	}))
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 0},
+		Upstream: config.UpstreamConfig{URL: mock.URL, TimeoutSeconds: 5},
+		Cache:    config.CacheConfig{TTLSeconds: 300},
+		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
+		Policy: config.PolicyConfig{
+			Defaults: config.RulesDefaults{BlockPreReleases: true},
+		},
+	}
+	cfg.Defaults()
+	logger, logLevel, _ := createLogger("text", "error", "")
+	srv, err := buildServer(cfg, logger, logLevel)
+	if err != nil {
+		b.Fatalf("buildServer: %v", err)
+	}
+	ts := httptest.NewServer(srv.mux)
+	return ts.URL, func() { ts.Close(); mock.Close() }
+}
+
+func BenchmarkNpmE2EUncached50Versions(b *testing.B) {
+	proxyURL, cleanup := benchNpmE2ESetup(b, 50)
+	defer cleanup()
+	tr := &http.Transport{MaxIdleConnsPerHost: 1, DisableKeepAlives: false}
+	client := &http.Client{Transport: tr}
+	defer tr.CloseIdleConnections()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Use unique package names to avoid cache hits.
+		resp, err := client.Get(proxyURL + fmt.Sprintf("/lodash%d", i))
+		if err != nil {
+			b.Fatalf("GET: %v", err)
+		}
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		resp.Body.Close()
+	}
+}
+
+func BenchmarkNpmE2ECached50Versions(b *testing.B) {
+	proxyURL, cleanup := benchNpmE2ESetup(b, 50)
+	defer cleanup()
+	tr := &http.Transport{MaxIdleConnsPerHost: 1, DisableKeepAlives: false}
+	client := &http.Client{Transport: tr}
+	defer tr.CloseIdleConnections()
+	// Prime the cache.
+	resp, err := client.Get(proxyURL + "/lodash")
+	if err != nil {
+		b.Fatalf("prime cache: %v", err)
+	}
+	resp.Body.Close()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resp, err := client.Get(proxyURL + "/lodash")
+		if err != nil {
+			b.Fatalf("GET: %v", err)
+		}
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		resp.Body.Close()
 	}
 }

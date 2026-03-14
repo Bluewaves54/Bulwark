@@ -138,9 +138,9 @@ func TestMavenSnapshotVersionsFilteredLive(t *testing.T) {
 }
 
 // TestMavenAgeBlockFiltersAllVersionsLive starts a proxy with min_package_age_days=10000
-// for junit:junit and verifies that ALL versions are filtered from the metadata XML.
-// With a 10000-day (~27 year) minimum age no junit version qualifies, so the
-// <versions> list must be empty and the <latest>/<release> tags must be cleared.
+// for junit:junit and verifies that the proxy returns 403 when ALL versions are blocked.
+// With a 10000-day (~27 year) minimum age no junit version qualifies, so the proxy
+// returns a 403 error with a policy reason.
 func TestMavenAgeBlockFiltersAllVersionsLive(t *testing.T) {
 	skipIfNotLive(t)
 	const filterPort = 18203
@@ -148,24 +148,10 @@ func TestMavenAgeBlockFiltersAllVersionsLive(t *testing.T) {
 
 	resp := mustGet(t, proxy.BaseURL+junitMetadataPath)
 	defer resp.Body.Close()
-	assertStatus(t, resp, 200)
+	assertStatus(t, resp, 403)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	bodyStr := string(body)
-
-	// All versions must be removed — the known stable version must be absent.
-	if strings.Contains(bodyStr, "<version>"+mavenVerJunit+"</version>") {
-		t.Errorf("age-blocked metadata still contains junit %s", mavenVerJunit)
-	}
-	// The <latest> element should be empty because every version was denied.
-	if strings.Contains(bodyStr, "<latest>"+mavenVerJunit+"</latest>") {
-		t.Error("age-blocked metadata still has <latest> pointing to a filtered version")
-	}
-	// Policy notice header must be present when versions are filtered.
-	if resp.Header.Get("X-Curation-Policy-Notice") == "" {
-		t.Error("expected X-Curation-Policy-Notice header when all versions are age-blocked")
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "PKGuard") {
+		t.Error("expected 403 body to contain PKGuard policy reason")
 	}
 }

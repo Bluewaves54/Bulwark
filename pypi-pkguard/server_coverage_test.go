@@ -4,10 +4,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -53,31 +56,31 @@ func TestAddrFromPortPyPI(t *testing.T) {
 }
 
 func TestCreateLoggerTextInfo(t *testing.T) {
-	if l := createLogger("text", "info"); l == nil {
+	if l, _, _ := createLogger("text", "info", ""); l == nil {
 		t.Error("expected non-nil logger for text/info")
 	}
 }
 
 func TestCreateLoggerJSONDebug(t *testing.T) {
-	if l := createLogger("json", "debug"); l == nil {
+	if l, _, _ := createLogger("json", "debug", ""); l == nil {
 		t.Error("expected non-nil logger for json/debug")
 	}
 }
 
 func TestCreateLoggerWarnLevel(t *testing.T) {
-	if l := createLogger("text", "warn"); l == nil {
+	if l, _, _ := createLogger("text", "warn", ""); l == nil {
 		t.Error("expected non-nil logger for text/warn")
 	}
 }
 
 func TestCreateLoggerErrorLevel(t *testing.T) {
-	if l := createLogger("text", "error"); l == nil {
+	if l, _, _ := createLogger("text", "error", ""); l == nil {
 		t.Error("expected non-nil logger for text/error")
 	}
 }
 
 func TestCreateLoggerUnknownLevel(t *testing.T) {
-	if l := createLogger("text", "verbose"); l == nil {
+	if l, _, _ := createLogger("text", "verbose", ""); l == nil {
 		t.Error("expected non-nil logger for unknown level")
 	}
 }
@@ -476,8 +479,8 @@ func TestAddUpstreamAuthTokenPyPI(t *testing.T) {
 		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, _ := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, _ := buildServer(cfg, logger, logLevel)
 	ts := httptest.NewServer(srv.mux)
 	defer ts.Close()
 
@@ -508,8 +511,8 @@ func TestAddUpstreamAuthBasicPyPI(t *testing.T) {
 		Logging: config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, _ := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, _ := buildServer(cfg, logger, logLevel)
 	ts := httptest.NewServer(srv.mux)
 	defer ts.Close()
 
@@ -534,7 +537,8 @@ func TestBuildServerInsecureTLS(t *testing.T) {
 		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	_, err := buildServer(cfg, createLogger("text", "error"))
+	logger, logLevel, _ := createLogger("text", "error", "")
+	_, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer with InsecureSkipVerify=true: %v", err)
 	}
@@ -596,8 +600,9 @@ func TestHandleSimplePackageLevelDeny(t *testing.T) {
 	ts := buildTestServer(t, mock.URL, policy)
 
 	resp, _ := http.Get(ts.url + testPathSimpleCov + testPkg + "/")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf(testFmtWant200Cov, resp.StatusCode)
+	// Package-level deny should return 403.
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("package deny: want 403, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 	// Stats counter for denied should have incremented.
@@ -663,8 +668,9 @@ func TestHandleSimpleLicenseDenied(t *testing.T) {
 	ts := buildTestServer(t, mock.URL, policy)
 
 	resp, _ := http.Get(ts.url + testPathSimpleCov + testPkg + "/")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf(testFmtWant200Cov, resp.StatusCode)
+	// All versions are denied by license rule → 403.
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("license deny: want 403, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 	if ts.srv.reqDenied.Load() == 0 {
@@ -731,7 +737,7 @@ func TestInitServerSuccess(t *testing.T) {
 	}
 	f.Close()
 
-	srv, logger, err := initServer(f.Name(), "", "", "")
+	srv, logger, _, err := initServer(f.Name(), "", "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -744,7 +750,7 @@ func TestInitServerSuccess(t *testing.T) {
 }
 
 func TestInitServerMissingConfig(t *testing.T) {
-	_, _, err := initServer("/nonexistent/path/config.yaml", "", "", "")
+	_, _, _, err := initServer("/nonexistent/path/config.yaml", "", "", "")
 	if err == nil {
 		t.Error("expected error for missing config file")
 	}
@@ -760,7 +766,7 @@ func TestInitServerWithTokenOverride(t *testing.T) {
 	}
 	f.Close()
 
-	srv, _, err := initServer(f.Name(), testTokenOverride, "", "")
+	srv, _, _, err := initServer(f.Name(), testTokenOverride, "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -984,7 +990,7 @@ func TestRunServerGracefulShutdown(t *testing.T) {
 	}
 	f.Close()
 
-	srv, logger, err := initServer(f.Name(), "", "", "")
+	srv, logger, _, err := initServer(f.Name(), "", "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -1031,7 +1037,8 @@ func TestExternalURLTrustedPackageBypassesAgeCheck(t *testing.T) {
 		Logging: config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	srv, err := buildServer(cfg, createLogger("text", "error"))
+	logger, logLevel, _ := createLogger("text", "error", "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -1059,7 +1066,7 @@ func TestExternalURLTrustedPackageBypassesAgeCheck(t *testing.T) {
 
 func TestIsAllowedExternalHostExactMatch(t *testing.T) {
 	allowlist := []string{"example.com", "files.pythonhosted.org"}
-	logger := createLogger("text", "error")
+	logger, _, _ := createLogger("text", "error", "")
 	if !isAllowedExternalHost("example.com", allowlist, logger) {
 		t.Error("exact match should be allowed")
 	}
@@ -1070,7 +1077,7 @@ func TestIsAllowedExternalHostExactMatch(t *testing.T) {
 
 func TestIsAllowedExternalHostNotInList(t *testing.T) {
 	allowlist := []string{"example.com"}
-	logger := createLogger("text", "error")
+	logger, _, _ := createLogger("text", "error", "")
 	if isAllowedExternalHost("evil.com", allowlist, logger) {
 		t.Error("host not in allowlist should be denied")
 	}
@@ -1078,7 +1085,7 @@ func TestIsAllowedExternalHostNotInList(t *testing.T) {
 
 func TestIsAllowedExternalHostWildcard(t *testing.T) {
 	allowlist := []string{"*.pythonhosted.org"}
-	logger := createLogger("text", "error")
+	logger, _, _ := createLogger("text", "error", "")
 	if isAllowedExternalHost("files.pythonhosted.org", allowlist, logger) {
 		t.Error("wildcard patterns should not be allowed")
 	}
@@ -1092,7 +1099,7 @@ func TestIsAllowedExternalHostWildcard(t *testing.T) {
 
 func TestIsAllowedExternalHostEmptyAllowlist(t *testing.T) {
 	allowlist := []string{}
-	logger := createLogger("text", "error")
+	logger, _, _ := createLogger("text", "error", "")
 	if isAllowedExternalHost("any-host.com", allowlist, logger) {
 		t.Error("empty allowlist should deny all hosts")
 	}
@@ -1100,7 +1107,7 @@ func TestIsAllowedExternalHostEmptyAllowlist(t *testing.T) {
 
 func TestIsAllowedExternalHostCaseInsensitive(t *testing.T) {
 	allowlist := []string{"Example.COM"}
-	logger := createLogger("text", "error")
+	logger, _, _ := createLogger("text", "error", "")
 	if !isAllowedExternalHost("example.com", allowlist, logger) {
 		t.Error("matching should be case-insensitive")
 	}
@@ -1111,8 +1118,135 @@ func TestIsAllowedExternalHostCaseInsensitive(t *testing.T) {
 
 func TestIsAllowedExternalHostWithPort(t *testing.T) {
 	allowlist := []string{"example.com"}
-	logger := createLogger("text", "error")
+	logger, _, _ := createLogger("text", "error", "")
 	if !isAllowedExternalHost("example.com:8080", allowlist, logger) {
 		t.Error("port should be stripped before matching")
+	}
+}
+
+// ─── parseLogLevel ───────────────────────────────────────────────────────────
+
+func TestParseLogLevelValidPyPI(t *testing.T) {
+	cases := []struct {
+		input string
+		want  slog.Level
+	}{
+		{"debug", slog.LevelDebug},
+		{"info", slog.LevelInfo},
+		{"warn", slog.LevelWarn},
+		{"error", slog.LevelError},
+		{"DEBUG", slog.LevelDebug},
+		{"INFO", slog.LevelInfo},
+	}
+	for _, tc := range cases {
+		lvl, ok := parseLogLevel(tc.input)
+		if !ok {
+			t.Errorf("parseLogLevel(%q) returned not-ok", tc.input)
+		}
+		if lvl != tc.want {
+			t.Errorf("parseLogLevel(%q) = %v, want %v", tc.input, lvl, tc.want)
+		}
+	}
+}
+
+func TestParseLogLevelInvalidPyPI(t *testing.T) {
+	_, ok := parseLogLevel("trace")
+	if ok {
+		t.Error("parseLogLevel(\"trace\") should return false")
+	}
+}
+
+// ─── handleGetLogLevel / handleSetLogLevel ───────────────────────────────────
+
+func TestHandleGetLogLevelPyPI(t *testing.T) {
+	ts := buildTestServer(t, "https://pypi.org", config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/admin/log-level", nil)
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/log-level: want 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["level"] == "" {
+		t.Error("expected non-empty level in response")
+	}
+}
+
+func TestHandleSetLogLevelPyPI(t *testing.T) {
+	ts := buildTestServer(t, "https://pypi.org", config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader(`{"level":"debug"}`))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT /admin/log-level: want 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["level"] != "debug" {
+		t.Errorf("level: want \"debug\", got %q", body["level"])
+	}
+}
+
+func TestHandleSetLogLevelInvalidBodyPyPI(t *testing.T) {
+	ts := buildTestServer(t, "https://pypi.org", config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader("not json"))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+func TestHandleSetLogLevelInvalidLevelPyPI(t *testing.T) {
+	ts := buildTestServer(t, "https://pypi.org", config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader(`{"level":"trace"}`))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400 for invalid level, got %d", rec.Code)
+	}
+}
+
+// ─── createLogger with file path ─────────────────────────────────────────────
+
+func TestCreateLoggerWithFilePathPyPI(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "test.log")
+	logger, lvl, f := createLogger("text", "info", logPath)
+	if logger == nil {
+		t.Fatal("expected non-nil logger")
+	}
+	if lvl == nil {
+		t.Fatal("expected non-nil LevelVar")
+	}
+	if f == nil {
+		t.Fatal("expected non-nil file when filePath is set")
+	}
+	defer f.Close()
+	logger.Info("test message")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "test message") {
+		t.Errorf("log file should contain 'test message', got %q", string(data))
+	}
+}
+
+func TestCreateLoggerWithoutFilePathPyPI(t *testing.T) {
+	logger, lvl, f := createLogger("text", "info", "")
+	if logger == nil {
+		t.Fatal("expected non-nil logger")
+	}
+	if lvl == nil {
+		t.Fatal("expected non-nil LevelVar")
+	}
+	if f != nil {
+		f.Close()
+		t.Error("expected nil file when filePath is empty")
 	}
 }

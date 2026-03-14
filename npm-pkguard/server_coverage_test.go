@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -43,31 +45,31 @@ func TestAddrFromPortNpm(t *testing.T) {
 }
 
 func TestCreateLoggerTextInfoNpm(t *testing.T) {
-	if l := createLogger("text", "info"); l == nil {
+	if l, _, _ := createLogger("text", "info", ""); l == nil {
 		t.Error("expected non-nil logger")
 	}
 }
 
 func TestCreateLoggerJSONDebugNpm(t *testing.T) {
-	if l := createLogger("json", "debug"); l == nil {
+	if l, _, _ := createLogger("json", "debug", ""); l == nil {
 		t.Error("expected non-nil logger for json/debug")
 	}
 }
 
 func TestCreateLoggerWarnNpm(t *testing.T) {
-	if l := createLogger("text", "warn"); l == nil {
+	if l, _, _ := createLogger("text", "warn", ""); l == nil {
 		t.Error("expected non-nil logger for warn")
 	}
 }
 
 func TestCreateLoggerErrorNpm(t *testing.T) {
-	if l := createLogger("text", "error"); l == nil {
+	if l, _, _ := createLogger("text", "error", ""); l == nil {
 		t.Error("expected non-nil logger for error")
 	}
 }
 
 func TestCreateLoggerDefaultNpm(t *testing.T) {
-	if l := createLogger("text", "unknown"); l == nil {
+	if l, _, _ := createLogger("text", "unknown", ""); l == nil {
 		t.Error("expected non-nil logger for unknown level")
 	}
 }
@@ -143,7 +145,8 @@ func buildNpmServerWithAuth(t *testing.T, upstreamURL, token, username, password
 		Logging: config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	srv, err := buildServer(cfg, createLogger("text", "error"))
+	logger, logLevel, _ := createLogger("text", "error", "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -310,7 +313,8 @@ func TestBuildServerInsecureTLSNpm(t *testing.T) {
 		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	_, err := buildServer(cfg, createLogger("text", "error"))
+	logger, logLevel, _ := createLogger("text", "error", "")
+	_, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer with InsecureSkipVerify: %v", err)
 	}
@@ -415,7 +419,7 @@ func TestInitServerNpmSuccess(t *testing.T) {
 	}
 	f.Close()
 
-	srv, logger, err := initServer(f.Name(), "", "", "")
+	srv, logger, _, err := initServer(f.Name(), "", "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -428,7 +432,7 @@ func TestInitServerNpmSuccess(t *testing.T) {
 }
 
 func TestInitServerNpmMissingConfig(t *testing.T) {
-	_, _, err := initServer("/nonexistent/path/config.yaml", "", "", "")
+	_, _, _, err := initServer("/nonexistent/path/config.yaml", "", "", "")
 	if err == nil {
 		t.Error("expected error for missing config file")
 	}
@@ -444,7 +448,7 @@ func TestInitServerNpmWithTokenOverride(t *testing.T) {
 	}
 	f.Close()
 
-	srv, _, err := initServer(f.Name(), testTokenValue, "", "")
+	srv, _, _, err := initServer(f.Name(), testTokenValue, "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -677,7 +681,7 @@ func TestRunServerNpmGracefulShutdown(t *testing.T) {
 	}
 	f.Close()
 
-	srv, logger, err := initServer(f.Name(), "", "", "")
+	srv, logger, _, err := initServer(f.Name(), "", "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -729,5 +733,132 @@ func TestTarballTrustedPackageBypassesAgeCheck(t *testing.T) {
 	ts.srv.mux.ServeHTTP(rec, req)
 	if rec.Code == http.StatusForbidden {
 		t.Errorf("trusted package should not be blocked on tarball download, got %d", rec.Code)
+	}
+}
+
+// ─── parseLogLevel ───────────────────────────────────────────────────────────
+
+func TestParseLogLevelValidNpm(t *testing.T) {
+	cases := []struct {
+		input string
+		want  slog.Level
+	}{
+		{"debug", slog.LevelDebug},
+		{"info", slog.LevelInfo},
+		{"warn", slog.LevelWarn},
+		{"error", slog.LevelError},
+		{"DEBUG", slog.LevelDebug},
+		{"INFO", slog.LevelInfo},
+	}
+	for _, tc := range cases {
+		lvl, ok := parseLogLevel(tc.input)
+		if !ok {
+			t.Errorf("parseLogLevel(%q) returned not-ok", tc.input)
+		}
+		if lvl != tc.want {
+			t.Errorf("parseLogLevel(%q) = %v, want %v", tc.input, lvl, tc.want)
+		}
+	}
+}
+
+func TestParseLogLevelInvalidNpm(t *testing.T) {
+	_, ok := parseLogLevel("trace")
+	if ok {
+		t.Error("parseLogLevel(\"trace\") should return false")
+	}
+}
+
+// ─── handleGetLogLevel / handleSetLogLevel ───────────────────────────────────
+
+func TestHandleGetLogLevelNpm(t *testing.T) {
+	ts := buildTestServer(t, testUpstreamURL, config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/admin/log-level", nil)
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/log-level: want 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["level"] == "" {
+		t.Error("expected non-empty level in response")
+	}
+}
+
+func TestHandleSetLogLevelNpm(t *testing.T) {
+	ts := buildTestServer(t, testUpstreamURL, config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader(`{"level":"debug"}`))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT /admin/log-level: want 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["level"] != "debug" {
+		t.Errorf("level: want \"debug\", got %q", body["level"])
+	}
+}
+
+func TestHandleSetLogLevelInvalidBodyNpm(t *testing.T) {
+	ts := buildTestServer(t, testUpstreamURL, config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader("not json"))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+func TestHandleSetLogLevelInvalidLevelNpm(t *testing.T) {
+	ts := buildTestServer(t, testUpstreamURL, config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader(`{"level":"trace"}`))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400 for invalid level, got %d", rec.Code)
+	}
+}
+
+// ─── createLogger with file path ─────────────────────────────────────────────
+
+func TestCreateLoggerWithFilePathNpm(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "test.log")
+	logger, lvl, f := createLogger("text", "info", logPath)
+	if logger == nil {
+		t.Fatal("expected non-nil logger")
+	}
+	if lvl == nil {
+		t.Fatal("expected non-nil LevelVar")
+	}
+	if f == nil {
+		t.Fatal("expected non-nil file when filePath is set")
+	}
+	defer f.Close()
+	logger.Info("test message")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "test message") {
+		t.Errorf("log file should contain 'test message', got %q", string(data))
+	}
+}
+
+func TestCreateLoggerWithoutFilePathNpm(t *testing.T) {
+	logger, lvl, f := createLogger("text", "info", "")
+	if logger == nil {
+		t.Fatal("expected non-nil logger")
+	}
+	if lvl == nil {
+		t.Fatal("expected non-nil LevelVar")
+	}
+	if f != nil {
+		f.Close()
+		t.Error("expected nil file when filePath is empty")
 	}
 }

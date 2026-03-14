@@ -111,9 +111,9 @@ func TestPyPICertifiSimpleIndexLive(t *testing.T) {
 }
 
 // TestPyPIAgeBlockFiltersAllVersionsLive starts a proxy with min_package_age_days=10000
-// for urllib3 and verifies that ALL versions are filtered from the simple index.
-// With a 10000-day minimum age no urllib3 version qualifies, so the response should
-// contain no download links for urllib3 files.
+// for urllib3 and verifies that the proxy returns 403 when ALL versions are blocked.
+// With a 10000-day minimum age no urllib3 version qualifies, so the proxy returns
+// a 403 error with a policy reason.
 func TestPyPIAgeBlockFiltersAllVersionsLive(t *testing.T) {
 	skipIfNotLive(t)
 	const filterPort = 18205
@@ -121,24 +121,10 @@ func TestPyPIAgeBlockFiltersAllVersionsLive(t *testing.T) {
 
 	resp := mustGet(t, proxy.BaseURL+"/simple/"+pypiPkgUrllib3+"/")
 	defer resp.Body.Close()
-	assertStatus(t, resp, 200)
+	assertStatus(t, resp, 403)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	bodyStr := string(body)
-
-	// No urllib3 download links should remain — check for common file patterns.
-	if strings.Contains(bodyStr, "urllib3-") && strings.Contains(bodyStr, ".whl") {
-		t.Error("age-blocked simple index still contains urllib3 wheel file links")
-	}
-	if strings.Contains(bodyStr, "urllib3-") && strings.Contains(bodyStr, ".tar.gz") {
-		t.Error("age-blocked simple index still contains urllib3 sdist file links")
-	}
-
-	// Policy notice header must be present.
-	if resp.Header.Get("X-Curation-Policy-Notice") == "" {
-		t.Error("expected X-Curation-Policy-Notice header when all versions are age-blocked")
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "PKGuard") {
+		t.Error("expected 403 body to contain PKGuard policy reason")
 	}
 }

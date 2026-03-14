@@ -108,9 +108,9 @@ func TestNpmMsPackumentLive(t *testing.T) {
 }
 
 // TestNpmAgeBlockFiltersAllVersionsLive starts a proxy with min_package_age_days=10000
-// for the ms package and verifies that ALL versions are removed from the packument.
-// With a 10000-day minimum age no version of ms qualifies, so the "versions" object
-// must be empty and the "latest" dist-tag must be absent.
+// for the ms package and verifies that the proxy returns 403 when ALL versions are blocked.
+// With a 10000-day minimum age no version of ms qualifies, so the proxy returns
+// a structured 403 error with a policy reason.
 func TestNpmAgeBlockFiltersAllVersionsLive(t *testing.T) {
 	skipIfNotLive(t)
 	const filterPort = 18204
@@ -118,34 +118,12 @@ func TestNpmAgeBlockFiltersAllVersionsLive(t *testing.T) {
 
 	resp := mustGet(t, proxy.BaseURL+"/"+npmPkgMs)
 	defer resp.Body.Close()
-	assertStatus(t, resp, 200)
+	assertStatus(t, resp, 403)
 
-	var doc map[string]json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		t.Fatalf("decode packument: %v", err)
-	}
-
-	// All versions should be removed.
-	if versionsRaw, ok := doc["versions"]; ok {
-		var versions map[string]json.RawMessage
-		if err := json.Unmarshal(versionsRaw, &versions); err == nil && len(versions) > 0 {
-			t.Errorf("expected zero versions after age block, got %d", len(versions))
-		}
-	}
-
-	// The "latest" dist-tag must not point to any version.
-	if dtRaw, ok := doc["dist-tags"]; ok {
-		var distTags map[string]string
-		if err := json.Unmarshal(dtRaw, &distTags); err == nil {
-			if v, exists := distTags["latest"]; exists && v != "" {
-				t.Errorf("expected latest dist-tag removed, but still points to %q", v)
-			}
-		}
-	}
-
-	// Policy notice header must be present.
-	if resp.Header.Get("X-Curation-Policy-Notice") == "" {
-		t.Error("expected X-Curation-Policy-Notice header when all versions are age-blocked")
+	// Body should contain a policy reason.
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "PKGuard") {
+		t.Error("expected 403 body to contain PKGuard policy reason")
 	}
 }
 
@@ -244,19 +222,13 @@ func TestNpmTrustedPackageBypassesAllRulesLive(t *testing.T) {
 		}
 	}
 
-	// ms is NOT trusted — all versions blocked by age rule.
+	// ms is NOT trusted — all versions blocked by age rule → 403.
 	resp2 := mustGet(t, proxy.BaseURL+"/"+npmPkgMs)
 	defer resp2.Body.Close()
-	assertStatus(t, resp2, 200)
+	assertStatus(t, resp2, 403)
 
-	var doc2 map[string]json.RawMessage
-	if err := json.NewDecoder(resp2.Body).Decode(&doc2); err != nil {
-		t.Fatalf("decode packument: %v", err)
-	}
-	if versionsRaw, ok := doc2["versions"]; ok {
-		var versions map[string]json.RawMessage
-		if err := json.Unmarshal(versionsRaw, &versions); err == nil && len(versions) > 0 {
-			t.Errorf("untrusted ms should have zero versions, got %d", len(versions))
-		}
+	body2, _ := io.ReadAll(resp2.Body)
+	if !strings.Contains(string(body2), "PKGuard") {
+		t.Error("expected 403 body to contain PKGuard policy reason for untrusted ms")
 	}
 }

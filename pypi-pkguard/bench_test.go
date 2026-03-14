@@ -5,6 +5,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -66,9 +69,76 @@ func benchmarkPyPIJSON(b *testing.B, n int) {
 	b.SetBytes(int64(len(body)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, err := filterPyPIJSONResponse(body, "requests", benchEngine)
+		_, _, _, err := filterPyPIJSONResponse(body, "requests", benchEngine)
 		if err != nil {
 			b.Fatalf("filterPyPIJSONResponse: %v", err)
 		}
+	}
+}
+
+// ─── End-to-end HTTP latency benchmarks ──────────────────────────────────────
+
+func benchPyPIE2ESetup(b *testing.B, n int) (proxyURL string, cleanup func()) {
+	b.Helper()
+	body := buildPyPIJSONBody("requests", n)
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body) //nolint:errcheck
+	}))
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 0},
+		Upstream: config.UpstreamConfig{URL: mock.URL, TimeoutSeconds: 5},
+		Cache:    config.CacheConfig{TTLSeconds: 300},
+		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
+		Policy: config.PolicyConfig{
+			Defaults: config.RulesDefaults{BlockPreReleases: true},
+		},
+	}
+	cfg.Defaults()
+	logger, logLevel, _ := createLogger("text", "error", "")
+	srv, err := buildServer(cfg, logger, logLevel)
+	if err != nil {
+		b.Fatalf("buildServer: %v", err)
+	}
+	ts := httptest.NewServer(srv.mux)
+	return ts.URL, func() { ts.Close(); mock.Close() }
+}
+
+func BenchmarkPyPIE2EUncached50Versions(b *testing.B) {
+	proxyURL, cleanup := benchPyPIE2ESetup(b, 50)
+	defer cleanup()
+	tr := &http.Transport{MaxIdleConnsPerHost: 1, DisableKeepAlives: false}
+	client := &http.Client{Transport: tr}
+	defer tr.CloseIdleConnections()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resp, err := client.Get(proxyURL + fmt.Sprintf("/pypi/requests%d/json", i))
+		if err != nil {
+			b.Fatalf("GET: %v", err)
+		}
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		resp.Body.Close()
+	}
+}
+
+func BenchmarkPyPIE2ECached50Versions(b *testing.B) {
+	proxyURL, cleanup := benchPyPIE2ESetup(b, 50)
+	defer cleanup()
+	tr := &http.Transport{MaxIdleConnsPerHost: 1, DisableKeepAlives: false}
+	client := &http.Client{Transport: tr}
+	defer tr.CloseIdleConnections()
+	resp, err := client.Get(proxyURL + "/pypi/requests/json")
+	if err != nil {
+		b.Fatalf("prime cache: %v", err)
+	}
+	resp.Body.Close()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resp, err := client.Get(proxyURL + "/pypi/requests/json")
+		if err != nil {
+			b.Fatalf("GET: %v", err)
+		}
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		resp.Body.Close()
 	}
 }

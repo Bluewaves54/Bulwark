@@ -25,11 +25,12 @@ const (
 	// ctPyPISimpleJSON is the Content-Type for PyPI Simple Index v1 JSON responses.
 	ctPyPISimpleJSON = "application/vnd.pypi.simple.v1+json"
 
-	hdrContentType = "Content-Type"
-	mimeJSON       = "application/json"
-	hdrXCache      = "X-Cache"
-	errMsgUpstream = "upstream error"
-	pypiTimeFmt    = "2006-01-02T15:04:05"
+	hdrContentType    = "Content-Type"
+	mimeJSON          = "application/json"
+	hdrXCache         = "X-Cache"
+	errMsgUpstream    = "upstream error"
+	pypiTimeFmt       = "2006-01-02T15:04:05"
+	blockReasonAllVer = "all available versions blocked by policy"
 )
 
 var externalPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@/%-]*$`)
@@ -96,9 +97,21 @@ func (s *Server) handleSimple(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allowed, denied := s.filterVersions(pkg, meta)
+	allowed, denied, blockReason := s.filterVersions(pkg, meta)
 	s.reqAllowed.Add(int64(len(allowed)))
 	s.reqDenied.Add(int64(len(denied)))
+
+	// When the entire package is blocked, return 403 with the policy reason.
+	if blockReason != "" {
+		errBody := fmt.Sprintf("[PKGuard] %s: %s", pkg, blockReason)
+		entry := &rules.CacheEntry{Body: []byte(errBody), ContentType: "text/plain", StatusCode: http.StatusForbidden}
+		s.cache.Set(cacheKey, entry)
+		w.Header().Set(hdrContentType, "text/plain")
+		w.Header().Set(hdrXCache, "MISS")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(errBody)) //nolint:errcheck
+		return
+	}
 
 	format := preferredFormat(r)
 	var body []byte
@@ -166,7 +179,7 @@ func (s *Server) handlePackageJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Filter the JSON response through the rule engine.
-	filtered, removed, filterErr := filterPyPIJSONResponse(body, pkg, s.engine)
+	filtered, removed, blockReason, filterErr := filterPyPIJSONResponse(body, pkg, s.engine)
 	if filterErr != nil {
 		s.logger.Warn("filtering pypi json failed",
 			slog.String("package", pkg),
@@ -180,6 +193,18 @@ func (s *Server) handlePackageJSON(w http.ResponseWriter, r *http.Request) {
 		removed = 0
 	}
 	s.reqDenied.Add(int64(removed))
+
+	// When the entire package is blocked, return 403 with the policy reason.
+	if blockReason != "" {
+		errBody := fmt.Sprintf("[PKGuard] %s: %s", pkg, blockReason)
+		entry := &rules.CacheEntry{Body: []byte(errBody), ContentType: "text/plain", StatusCode: http.StatusForbidden}
+		s.cache.Set(cacheKey, entry)
+		w.Header().Set(hdrContentType, "text/plain")
+		w.Header().Set(hdrXCache, "MISS")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(errBody)) //nolint:errcheck
+		return
+	}
 
 	ct := resp.Header.Get(hdrContentType)
 	if ct == "" {
@@ -199,21 +224,23 @@ func (s *Server) handlePackageJSON(w http.ResponseWriter, r *http.Request) {
 
 // filterPyPIJSONResponse applies the rule engine to a PyPI JSON API response,
 // removing denied versions from the releases map while preserving all other fields.
-func filterPyPIJSONResponse(body []byte, pkg string, engine *rules.RuleEngine) ([]byte, int, error) {
+// Returns the filtered bytes, count of removed versions, a block reason
+// (non-empty when the entire package should be denied), and any error.
+func filterPyPIJSONResponse(body []byte, pkg string, engine *rules.RuleEngine) ([]byte, int, string, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, 0, fmt.Errorf("parsing pypi json: %w", err)
+		return nil, 0, "", fmt.Errorf("parsing pypi json: %w", err)
 	}
 
 	license := extractPyPIJSONLicense(raw)
 	var releases map[string]json.RawMessage
 	if relRaw, ok := raw["releases"]; ok {
 		if err := json.Unmarshal(relRaw, &releases); err != nil {
-			return nil, 0, fmt.Errorf("parsing releases: %w", err)
+			return nil, 0, "", fmt.Errorf("parsing releases: %w", err)
 		}
 	}
 	if len(releases) == 0 {
-		return body, 0, nil
+		return body, 0, "", nil
 	}
 
 	allVersions := buildPyPIJSONVersionMetas(releases, license)
@@ -221,7 +248,8 @@ func filterPyPIJSONResponse(body []byte, pkg string, engine *rules.RuleEngine) (
 
 	pkgDec := engine.EvaluatePackage(pkgMeta)
 	if !pkgDec.Allow && !pkgDec.DryRun {
-		return rewriteReleases(raw, map[string]json.RawMessage{}, len(allVersions))
+		out, removed, err := rewriteReleases(raw, map[string]json.RawMessage{}, len(allVersions))
+		return out, removed, pkgDec.Reason, err
 	}
 
 	removed := 0
@@ -235,9 +263,17 @@ func filterPyPIJSONResponse(body []byte, pkg string, engine *rules.RuleEngine) (
 	}
 
 	if removed == 0 {
-		return body, 0, nil
+		return body, 0, "", nil
 	}
-	return rewriteReleases(raw, releases, removed)
+
+	// If all versions were removed by version-level rules, report a block reason.
+	blockReason := ""
+	if len(releases) == 0 {
+		blockReason = blockReasonAllVer
+	}
+
+	out, cnt, err := rewriteReleases(raw, releases, removed)
+	return out, cnt, blockReason, err
 }
 
 // extractPyPIJSONLicense extracts the license string from the info block of a PyPI JSON response.
@@ -499,7 +535,8 @@ func (s *Server) fetchPyPIMeta(pkg string) (*pypiMeta, error) {
 }
 
 // filterVersions evaluates all known versions and separates allowed from denied.
-func (s *Server) filterVersions(pkg string, meta *pypiMeta) (allowed, denied []string) {
+// Returns a block reason (non-empty when the entire package should be denied).
+func (s *Server) filterVersions(pkg string, meta *pypiMeta) (allowed, denied []string, blockReason string) {
 	allVersions := make([]rules.VersionMeta, 0, len(meta.releases))
 	for ver, rel := range meta.releases {
 		allVersions = append(allVersions, rules.VersionMeta{Version: ver, PublishedAt: rel.uploadTime, License: meta.license})
@@ -508,10 +545,15 @@ func (s *Server) filterVersions(pkg string, meta *pypiMeta) (allowed, denied []s
 
 	pkgDec := s.engine.EvaluatePackage(pkgMeta)
 	if !pkgDec.Allow {
+		s.logger.Info("package blocked by policy",
+			slog.String("package", pkg),
+			slog.String("rule", pkgDec.RuleName),
+			slog.String("reason", pkgDec.Reason),
+		)
 		for ver := range meta.releases {
 			denied = append(denied, ver)
 		}
-		return allowed, denied
+		return allowed, denied, pkgDec.Reason
 	}
 
 	for _, vm := range allVersions {
@@ -519,13 +561,25 @@ func (s *Server) filterVersions(pkg string, meta *pypiMeta) (allowed, denied []s
 		if dec.Allow {
 			allowed = append(allowed, vm.Version)
 		} else {
+			s.logger.Info("version blocked",
+				slog.String("package", pkg),
+				slog.String("version", vm.Version),
+				slog.String("rule", dec.RuleName),
+				slog.String("reason", dec.Reason),
+			)
 			denied = append(denied, vm.Version)
 		}
 		if dec.DryRun {
 			s.reqDryRun.Add(1)
 		}
 	}
-	return allowed, denied
+
+	// If all versions were removed by version-level rules, report a block reason.
+	if len(allowed) == 0 && len(denied) > 0 {
+		blockReason = blockReasonAllVer
+	}
+
+	return allowed, denied, blockReason
 }
 
 // preferredFormat returns "json" or "html" based on the Accept header.
@@ -660,6 +714,11 @@ func (s *Server) evaluateExternalURL(rawURL string) *rules.FilterDecision {
 
 	pkgDec := s.engine.EvaluatePackage(pkgMeta)
 	if !pkgDec.Allow {
+		s.logger.Info("external URL package blocked",
+			slog.String("package", pkgName),
+			slog.String("rule", pkgDec.RuleName),
+			slog.String("reason", pkgDec.Reason),
+		)
 		return &pkgDec
 	}
 	if version != "" {

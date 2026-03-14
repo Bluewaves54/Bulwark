@@ -28,6 +28,7 @@ metrics:
 logging:
   level: "info"
   format: "text"
+  # file_path: "/var/log/pkguard/pypi.log"  # optional; logs also written to disk
 
 policy:
   dry_run: false

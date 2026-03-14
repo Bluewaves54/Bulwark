@@ -4,11 +4,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,31 +43,31 @@ func TestAddrFromPortMaven(t *testing.T) {
 }
 
 func TestCreateLoggerTextInfoMaven(t *testing.T) {
-	if l := createLogger("text", "info"); l == nil {
+	if l, _, _ := createLogger("text", "info", ""); l == nil {
 		t.Error("expected non-nil logger for text/info")
 	}
 }
 
 func TestCreateLoggerJSONDebugMaven(t *testing.T) {
-	if l := createLogger("json", "debug"); l == nil {
+	if l, _, _ := createLogger("json", "debug", ""); l == nil {
 		t.Error("expected non-nil logger for json/debug")
 	}
 }
 
 func TestCreateLoggerWarnMaven(t *testing.T) {
-	if l := createLogger("text", "warn"); l == nil {
+	if l, _, _ := createLogger("text", "warn", ""); l == nil {
 		t.Error("non-nil logger for warn")
 	}
 }
 
 func TestCreateLoggerErrorMaven(t *testing.T) {
-	if l := createLogger("text", "error"); l == nil {
+	if l, _, _ := createLogger("text", "error", ""); l == nil {
 		t.Error("non-nil logger for error")
 	}
 }
 
 func TestCreateLoggerDefaultMaven(t *testing.T) {
-	if l := createLogger("text", "notsuchlog"); l == nil {
+	if l, _, _ := createLogger("text", "notsuchlog", ""); l == nil {
 		t.Error("non-nil logger for unknown level")
 	}
 }
@@ -139,7 +143,8 @@ func buildMavenServerWithAuth(t *testing.T, upstreamURL, token, username, passwo
 		Logging: config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	srv, err := buildServer(cfg, createLogger("text", "error"))
+	logger, logLevel, _ := createLogger("text", "error", "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -397,7 +402,8 @@ func TestBuildServerInsecureTLSMaven(t *testing.T) {
 		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	_, err := buildServer(cfg, createLogger("text", "error"))
+	logger, logLevel, _ := createLogger("text", "error", "")
+	_, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer with InsecureSkipVerify: %v", err)
 	}
@@ -587,7 +593,7 @@ func TestInitServerMavenSuccess(t *testing.T) {
 	}
 	f.Close()
 
-	srv, logger, err := initServer(f.Name(), "", "", "")
+	srv, logger, _, err := initServer(f.Name(), "", "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -600,7 +606,7 @@ func TestInitServerMavenSuccess(t *testing.T) {
 }
 
 func TestInitServerMavenMissingConfig(t *testing.T) {
-	_, _, err := initServer("/nonexistent/path/config.yaml", "", "", "")
+	_, _, _, err := initServer("/nonexistent/path/config.yaml", "", "", "")
 	if err == nil {
 		t.Error("expected error for missing config file")
 	}
@@ -616,7 +622,7 @@ func TestInitServerMavenWithTokenOverride(t *testing.T) {
 	}
 	f.Close()
 
-	srv, _, err := initServer(f.Name(), testTokenMaven, "", "")
+	srv, _, _, err := initServer(f.Name(), testTokenMaven, "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -732,7 +738,7 @@ func TestRunServerMavenGracefulShutdown(t *testing.T) {
 	}
 	f.Close()
 
-	srv, logger, err := initServer(f.Name(), "", "", "")
+	srv, logger, _, err := initServer(f.Name(), "", "", "")
 	if err != nil {
 		t.Fatalf(testErrInitServer, err)
 	}
@@ -855,7 +861,8 @@ func TestHandleArtifactAgeCheckNoLastModified(t *testing.T) {
 	}
 	cfg.Defaults()
 
-	srv, err := buildServer(cfg, createLogger("text", "error"))
+	logger, logLevel, _ := createLogger("text", "error", "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -871,5 +878,152 @@ func TestHandleArtifactAgeCheckNoLastModified(t *testing.T) {
 
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("expected 403 when age filtering required but no Last-Modified, got %d", resp.StatusCode)
+	}
+}
+
+// ─── parseLogLevel ───────────────────────────────────────────────────────────
+
+func TestParseLogLevelValidMaven(t *testing.T) {
+	cases := []struct {
+		input string
+		want  slog.Level
+	}{
+		{"debug", slog.LevelDebug},
+		{"info", slog.LevelInfo},
+		{"warn", slog.LevelWarn},
+		{"error", slog.LevelError},
+		{"DEBUG", slog.LevelDebug},
+		{"INFO", slog.LevelInfo},
+	}
+	for _, tc := range cases {
+		lvl, ok := parseLogLevel(tc.input)
+		if !ok {
+			t.Errorf("parseLogLevel(%q) returned not-ok", tc.input)
+		}
+		if lvl != tc.want {
+			t.Errorf("parseLogLevel(%q) = %v, want %v", tc.input, lvl, tc.want)
+		}
+	}
+}
+
+func TestParseLogLevelInvalidMaven(t *testing.T) {
+	_, ok := parseLogLevel("trace")
+	if ok {
+		t.Error("parseLogLevel(\"trace\") should return false")
+	}
+}
+
+// ─── handleGetLogLevel / handleSetLogLevel ───────────────────────────────────
+
+func TestHandleGetLogLevelMaven(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mock.Close()
+
+	ts := buildMavenTestServer(t, mock.URL, config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/admin/log-level", nil)
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/log-level: want 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["level"] == "" {
+		t.Error("expected non-empty level in response")
+	}
+}
+
+func TestHandleSetLogLevelMaven(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mock.Close()
+
+	ts := buildMavenTestServer(t, mock.URL, config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader(`{"level":"debug"}`))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT /admin/log-level: want 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["level"] != "debug" {
+		t.Errorf("level: want \"debug\", got %q", body["level"])
+	}
+}
+
+func TestHandleSetLogLevelInvalidBodyMaven(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mock.Close()
+
+	ts := buildMavenTestServer(t, mock.URL, config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader("not json"))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400 for invalid body, got %d", rec.Code)
+	}
+}
+
+func TestHandleSetLogLevelInvalidLevelMaven(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mock.Close()
+
+	ts := buildMavenTestServer(t, mock.URL, config.PolicyConfig{})
+	req := httptest.NewRequest(http.MethodPut, "/admin/log-level", strings.NewReader(`{"level":"trace"}`))
+	rec := httptest.NewRecorder()
+	ts.srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400 for invalid level, got %d", rec.Code)
+	}
+}
+
+// ─── createLogger with file path ─────────────────────────────────────────────
+
+func TestCreateLoggerWithFilePathMaven(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "test.log")
+	logger, lvl, f := createLogger("text", "info", logPath)
+	if logger == nil {
+		t.Fatal("expected non-nil logger")
+	}
+	if lvl == nil {
+		t.Fatal("expected non-nil LevelVar")
+	}
+	if f == nil {
+		t.Fatal("expected non-nil file when filePath is set")
+	}
+	defer f.Close()
+	logger.Info("test message")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "test message") {
+		t.Errorf("log file should contain 'test message', got %q", string(data))
+	}
+}
+
+func TestCreateLoggerWithoutFilePathMaven(t *testing.T) {
+	logger, lvl, f := createLogger("text", "info", "")
+	if logger == nil {
+		t.Fatal("expected non-nil logger")
+	}
+	if lvl == nil {
+		t.Fatal("expected non-nil LevelVar")
+	}
+	if f != nil {
+		f.Close()
+		t.Error("expected nil file when filePath is empty")
 	}
 }

@@ -184,8 +184,9 @@ type MetricsConfig struct {
 
 // LoggingConfig controls log output.
 type LoggingConfig struct {
-	Level  string `yaml:"level"`
-	Format string `yaml:"format"` // "text" | "json"
+	Level    string `yaml:"level"`
+	Format   string `yaml:"format"`    // "text" | "json"
+	FilePath string `yaml:"file_path"` // optional path to a log file on disk
 }
 
 // Defaults applies sensible defaults to any zero-value fields.

@@ -8,7 +8,7 @@ services:
     ports:
       - "18001:18001"
     volumes:
-      - ./npm-pkguard/config-best-practices.yaml:/app/config.yaml:ro
+      - ./npm-pkguard/config-best-practices.yaml:/config.yaml:ro
     environment:
       - RUST_LOG=debug
     networks:
@@ -21,7 +21,7 @@ services:
     ports:
       - "18000:18000"
     volumes:
-      - ./pypi-pkguard/config-best-practices.yaml:/app/config.yaml:ro
+      - ./pypi-pkguard/config-best-practices.yaml:/config.yaml:ro
     networks:
       - pkguard-demo
 
@@ -32,7 +32,7 @@ services:
     ports:
       - "18002:18002"
     volumes:
-      - ./maven-pkguard/config-best-practices.yaml:/app/config.yaml:ro
+      - ./maven-pkguard/config-best-practices.yaml:/config.yaml:ro
     networks:
       - pkguard-demo
 

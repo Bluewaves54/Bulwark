@@ -1,6 +1,6 @@
 # Maven PKGuard — Best Practices Configuration
 # Deploy this config on Friday and immediately protect your org.
-# Sensible defaults: blocks snapshots, pre-releases, young artifacts (3 days).
+# Sensible defaults: blocks snapshots, pre-releases, young artifacts (7 days).
 
 server:
   port: 18002
@@ -27,6 +27,7 @@ metrics:
 logging:
   level: "info"
   format: "text"
+  # file_path: "/var/log/pkguard/maven.log"
 
 policy:
   dry_run: false
@@ -62,27 +63,9 @@ policy:
     - name: "block-known-malware"
       action: "deny"
       package_patterns:
-        # Dependency confusion / namespace impersonation
-        - "com.malicious:*"                       # generic malicious namespace
-        - "org.compromised:*"                     # generic compromised namespace
-
-        # Log4Shell era impersonation (2021-2022)
-        - "com.github.nicercs:log4j-core"         # impersonation of Apache Log4j
-        - "com.github.nicercs:log4j-api"          # impersonation of Apache Log4j
-
-        # Known malicious Maven artifacts (supply chain attacks)
-        - "io.github.nicercs:*"                   # namespace used for malicious impersonations
-        - "com.github.spring-cloud:*"             # impersonation of Spring Cloud
-        - "com.github.springframwork:*"           # typosquat of springframework
-        - "org.spriingframework:*"                # typosquat of springframework
-        - "com.github.apachee:*"                  # typosquat of Apache namespace
-        - "org.apaache:*"                         # typosquat of org.apache
-        - "com.github.google-cloud:*"             # impersonation of Google Cloud
-        - "io.github.junnit:*"                    # typosquat of junit
-        - "com.github.amazonsdk:*"                # impersonation of AWS SDK
-
-        # Confirmed malicious coordinates from security advisories
-        - "xyz.excitedbryo:*"                     # 2023 — cryptominer
-        - "io.github.nickets:*"                   # 2023 — stealer
-        - "com.github.jitpack:*"                  # namespace squatting on JitPack
+        # High-confidence malicious coordinates from public malware incidents
+        - "com.github.nicercs:log4j-core"         # malicious impersonation coordinate
+        - "com.github.nicercs:log4j-api"          # malicious impersonation coordinate
+        - "io.github.nicercs:*"                   # malicious namespace used in impersonation campaign
+        - "xyz.excitedbryo:*"                     # 2023 — cryptominer (Sonatype advisory)
       reason: "Known malicious, dependency-confused, or typosquatted artifact"

@@ -96,8 +96,8 @@ C4Component
   Container_Boundary(pypi, "pypi-pkguard") {
     Component(main, "main.go", "Go package main", "Entry point. Parses flags, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM.")
     Component(server, "server.go — Server", "Go struct", "Registers HTTP routes on ServeMux. Holds references to config, HTTP client, cache, metrics, rule engine, logger.")
-    Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handleExternal, handleProxy, handleHealth, handleReadyz, handleMetrics. Each handler follows the filter pipeline.")
-    Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules. 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. Rewrite and return filtered response.")
+    Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handleExternal, handleProxy, handleHealth, handleReadyz, handleMetrics, handleGetLogLevel, handleSetLogLevel. Each handler follows the filter pipeline.")
+    Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with reason). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with reason. 7. Rewrite and return filtered response.")
     Component(pypi_helpers, "pypi.go", "Go package", "IsPreRelease (PEP 440), ExtractVersion (filename → version), PEP 691 JSON parsing, HTML simple index parsing.")
     Component(config_loader, "config.go", "Go package", "LoadConfig, applyDefaults, validate. PyPI-specific: PEP691Enabled, BaseURL, AllowedExternalHosts.")
     Component(metrics, "Metrics", "atomic.Int64 counters", "RequestsTotal, CacheHits, CacheMisses, VersionsFiltered, PackagesDenied, VelocityAnomalies, etc.")
@@ -245,7 +245,8 @@ stateDiagram-v2
     VersionDenied --> FilterVersions : next version
 
     FilterVersions --> BuildFilteredResponse : all versions evaluated
-    BuildFilteredResponse --> SetPolicyNoticeHeader : any versions removed
+    BuildFilteredResponse --> SetPolicyNoticeHeader : some versions removed
+    BuildFilteredResponse --> ReturnBlockedResponse : all versions removed (403)
     BuildFilteredResponse --> StoreInCache
     SetPolicyNoticeHeader --> StoreInCache
     StoreInCache --> ReturnFilteredResponse
@@ -254,7 +255,26 @@ stateDiagram-v2
     ReturnCacheHit --> [*]
     ReturnUpstreamError --> [*]
     ReturnFilteredResponse --> [*]
+    ReturnBlockedResponse --> [*]
 ```
+
+---
+
+### Block Response Behaviour
+
+When a package is entirely blocked — either by a package-level deny rule or because every individual version was removed by version-level rules — the proxy returns **HTTP 403 Forbidden** with a clear policy reason in the response body instead of an empty version list.
+
+| Ecosystem | Response Format | Example Body |
+|---|---|---|
+| **npm** | JSON `{"error":"..."}` | `{"error":"[PKGuard] event-stream: package matches deny list"}` |
+| **PyPI** | Plain text | `[PKGuard] requests: all available versions blocked by policy` |
+| **Maven** | Plain text (via `http.Error`) | `[PKGuard] com.example:mylib: all available versions blocked by policy` |
+
+This ensures package managers display a meaningful error message (e.g., npm shows the `error` field) instead of confusing messages like `ENOVERSIONS` (npm) or "No matching distribution found" (pip).
+
+When only *some* versions are blocked, the proxy still returns a **200 OK** with the filtered response and an `X-Curation-Policy-Notice` header indicating how many versions were removed.
+
+**Cached 403 responses** are stored in the in-memory cache with the same TTL as normal responses, so repeated requests for blocked packages are served from cache.
 
 ---
 

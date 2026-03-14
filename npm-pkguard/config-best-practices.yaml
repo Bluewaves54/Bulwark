@@ -1,6 +1,6 @@
 # npm PKGuard — Best Practices Configuration
 # Deploy this config on Friday and immediately protect your org.
-# Sensible defaults: blocks young packages (3 days), sketchy install scripts, known malware.
+# Sensible defaults: blocks young packages (7 days), sketchy install scripts, known malware.
 
 server:
   port: 18001
@@ -27,6 +27,7 @@ metrics:
 logging:
   level: "info"
   format: "text"
+  # file_path: "/var/log/pkguard/npm.log"
 
 policy:
   dry_run: false
@@ -36,7 +37,6 @@ policy:
     - "@types/*"
     - "@babel/*"
     - "@angular/*"
-    - "@react/*"
     - "react"
     - "react-dom"
     - "vue"
@@ -89,46 +89,24 @@ policy:
     - name: "block-known-malware"
       action: "deny"
       package_patterns:
-        # Backdoored / hijacked packages
-        - "event-stream"          # 2018 — cryptocurrency-stealing backdoor
-        - "flatmap-stream"        # 2018 — malicious dependency of event-stream
-        - "ua-parser-js"          # 2021 — compromised, cryptominer + password stealer
-        - "coa"                   # 2021 — hijacked, dropped malware
-        - "rc"                    # 2021 — hijacked alongside coa
-        - "eslint-scope"          # 2018 — hijacked, stole npm tokens
-        - "eslint-config-eslint"  # 2018 — hijacked alongside eslint-scope
-        - "getcookies"            # 2018 — backdoored via mailparser dependency chain
-        - "mailparser"            # 2018 — pulled in getcookies backdoor (v2.2.3)
+        # High-confidence malicious / compromised packages
+        - "event-stream"          # compromised in 2018 supply-chain attack
+        - "flatmap-stream"        # malicious payload package used with event-stream
+        - "ua-parser-js"          # compromised in 2021 malware incident
+        - "coa"                   # compromised in 2021 and published malicious versions
+        - "rc"                    # compromised in 2021 and published malicious versions
+        - "eslint-scope"          # compromised in 2018 and used to exfiltrate credentials
+        - "eslint-config-eslint"  # compromised package from same 2018 incident
+        - "getcookies"            # malicious package injected via dependency chain
+        - "mailparser"            # package involved in getcookies compromise chain
+        - "colors"                # sabotaged release incident (2022)
+        - "faker"                 # sabotaged release incident (2022)
+        - "node-ipc"              # protestware incident (2022)
+        - "peacenotwar"           # protestware payload package
+        - "crossenv"              # known malicious typosquat of cross-env
+        - "load-from-cwd-or-npm"  # known malicious package
         - "bootstrap-sass"        # 2019 — hijacked, dropped credential stealer
-
-        # Sabotaged by maintainer
-        - "colors"                # 2022 — infinite loop (v1.4.1+)
-        - "faker"                 # 2022 — infinite loop (v6.6.6+)
-        - "node-ipc"              # 2022 — protestware, wiped files (v10.1.1+)
-        - "peacenotwar"           # 2022 — protestware dependency of node-ipc
-
-        # Typosquats / dependency confusion
-        - "crossenv"              # typosquat of cross-env
-        - "cross-env.js"          # typosquat of cross-env
-        - "mongose"               # typosquat of mongoose
-        - "babelcli"              # typosquat of babel-cli
-        - "coffescript"           # typosquat of coffeescript
-        - "discordi.js"           # typosquat of discord.js
-        - "discord.app"           # impersonation — LofyGang stealer
-        - "discord.js-user"       # impersonation — LofyGang stealer
-        - "http-proxy.js"         # typosquat of http-proxy
-        - "sillly-datetime"       # typosquat of silly-datetime
-        - "electorn"              # typosquat of electron
-        - "load-from-cwd-or-npm"  # 2022 — trojan
-        - "jquerry"               # typosquat of jquery
-        - "loadsh"                # typosquat of lodash
-        - "lodahs"                # typosquat of lodash
-        - "lodashs"               # typosquat of lodash
-        - "twiter"                # typosquat of twitter
-        - "d3.js"                 # typosquat of d3
-        - "mariadb"               # 2022 — dependency confusion attack
         - "ctx"                   # 2022 — hijacked, stole env vars
-        - "socketio"              # typosquat of socket.io
-        - "mssql.js"              # typosquat of mssql
-        - "mssql-node"            # typosquat of mssql
+        - "discord.app"           # LofyGang stealer campaign
+        - "discord.js-user"       # LofyGang stealer campaign
       reason: "Known malicious, compromised, or typosquatted package"

@@ -42,8 +42,8 @@ func buildTestServer(t *testing.T, upstreamURL string, policy config.PolicyConfi
 		Policy:   policy,
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, err := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -306,8 +306,8 @@ func TestMetricsEndpoint(t *testing.T) {
 		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, _ := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, _ := buildServer(cfg, logger, logLevel)
 	ts := httptest.NewServer(srv.mux)
 	defer ts.Close()
 
@@ -369,8 +369,8 @@ func TestExternalAllowedHost(t *testing.T) {
 		Policy:   config.PolicyConfig{},
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, err := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -408,8 +408,8 @@ func TestExternalDeniedHost(t *testing.T) {
 		Policy:   config.PolicyConfig{},
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, err := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -441,8 +441,8 @@ func TestExternalWildcardAllowed(t *testing.T) {
 		Policy:   config.PolicyConfig{},
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, err := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -480,8 +480,8 @@ func TestExternalEmptyAllowlist(t *testing.T) {
 		Policy:   config.PolicyConfig{},
 	}
 	cfg.Defaults()
-	logger := createLogger(cfg.Logging.Format, cfg.Logging.Level)
-	srv, err := buildServer(cfg, logger)
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, err := buildServer(cfg, logger, logLevel)
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}
@@ -598,16 +598,9 @@ func TestHandlePackageJSONPackageDenied(t *testing.T) {
 		t.Fatalf(testErrGET, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200 (filtered), got %d", resp.StatusCode)
-	}
-
-	var result map[string]json.RawMessage
-	json.NewDecoder(resp.Body).Decode(&result) //nolint:errcheck
-	var releases map[string]json.RawMessage
-	json.Unmarshal(result["releases"], &releases) //nolint:errcheck
-	if len(releases) != 0 {
-		t.Errorf("package denied: want 0 releases, got %d", len(releases))
+	// Package-level deny should return 403.
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("package denied: want 403, got %d", resp.StatusCode)
 	}
 }
 
@@ -658,21 +651,10 @@ func TestSimpleIndexAgeBlockFiltersRecentVersions(t *testing.T) {
 		t.Fatalf(testErrGETSimple, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf(testFmtWant200, resp.StatusCode)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	bodyStr := string(body)
-
-	// Both versions are 1 day old; with 7-day rule, both should be absent.
-	if strings.Contains(bodyStr, testVersion) || strings.Contains(bodyStr, testVersionOld) {
-		t.Error("age block: recent versions should have been filtered from simple index")
-	}
-
-	notice := resp.Header.Get("X-Curation-Policy-Notice")
-	if notice == "" {
-		t.Error("expected X-Curation-Policy-Notice header when versions are filtered")
+	// Both versions are 1 day old; with 7-day rule, both should be blocked.
+	// The proxy should return 403 since all versions are blocked.
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("age block all versions: want 403, got %d", resp.StatusCode)
 	}
 }
 

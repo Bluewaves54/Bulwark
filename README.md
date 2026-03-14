@@ -108,7 +108,7 @@ When a package request arrives:
    - **Regex patterns?** Block versions matching custom patterns (e.g., anything with "rc" or "dev").
    - **Pinned approved?** Bypass age/other checks if you've explicitly approved the exact version.
 
-3. **Response rewriting:** Remove blocked versions from the response. Your package manager sees only what passed policy — no filtering visible to end users.
+3. **Response rewriting:** Remove blocked versions from the response. When *some* versions pass policy, the filtered response is returned normally. When a package is entirely blocked (package-level deny or all versions removed), PKGuard returns **HTTP 403** with a clear policy reason so your package manager displays a meaningful error instead of a confusing "no versions found" message.
 
 4. **Caching:** Cache filtered responses in memory (configurable TTL) so repeated requests don't hit the upstream registry repeatedly.
 
@@ -146,7 +146,7 @@ Developer → npm/pip/mvn → Enterprise Registry → PKGuard → PyPI/npm/Maven
 - **npm**: Packument filtering, tarball proxy, scoped packages (`@scope/pkg`), install script detection.
 - **Maven**: `maven-metadata.xml` filtering, checksum invalidation, artifact policy, SNAPSHOT blocking.
 - **Shared rule engine:** Trusted package allowlists, pre-release blocking, age quarantine, version pinning, deny lists, regex patterns, namespace protection, typosquatting detection, velocity anomalies, dry-run mode.
-- **Operational:** YAML config, structured logging (log/slog), in-memory TTL cache, `/healthz` & `/readyz` probes, JSON metrics.
+- **Operational:** YAML config, structured logging (log/slog), dynamic log-level API, disk file logging, in-memory TTL cache, `/healthz` & `/readyz` probes, JSON metrics.
 
 ---
 
@@ -319,6 +319,34 @@ policy:
 | `PKGUARD_AUTH_TOKEN`   | Bearer token for upstream auth   |
 | `PKGUARD_AUTH_USERNAME`| Basic-auth username              |
 | `PKGUARD_AUTH_PASSWORD`| Basic-auth password              |
+
+### Logging
+
+PKGuard uses Go's `log/slog` for structured logging with configurable levels, optional disk output, and runtime level changes.
+
+```yaml
+logging:
+  level: "info"          # debug | info | warn | error
+  format: "text"         # text | json
+  file_path: "/var/log/pkguard/npm.log"  # optional; logs also written to this file
+```
+
+When `file_path` is set, log output is written to **both** stdout and the specified file using `io.MultiWriter`.
+
+**Dynamic log-level changes** — every proxy exposes an admin API to adjust the log level at runtime without restarting:
+
+```bash
+# Get current level
+curl http://localhost:18001/admin/log-level
+# → {"level":"info"}
+
+# Set level to debug
+curl -X PUT http://localhost:18001/admin/log-level \
+  -d '{"level":"debug"}'
+# → {"level":"debug"}
+```
+
+Blocked packages are logged with structured fields including the package name, version, rule name, and reason for blocking.
 
 ---
 
