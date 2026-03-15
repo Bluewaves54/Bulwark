@@ -8,7 +8,7 @@ No database, UI, or vendor lock-in; just a single Go binary per ecosystem, a YAM
 
 ## Why
 
-Software supply chain attacks are the fastest-growing threat vector in the industry. From [event-stream](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident) and [ua-parser-js](https://github.com/nicercs/ua-parser-js-security) to [PyPI malware campaigns](https://blog.phylum.io/pypi-malware-replaces-crypto-addresses-in-developer-clipboards/), these attacks hit organizations of every size. Threats like the Shai-Hulud virus can reach any developer with a laptop connected to the internet.
+Software supply chain attacks are the fastest-growing threat vector in the industry. From event-stream, ua-parser-js to PyPI malware campaigns, these attacks hit organizations of every size. Threats like the Shai-Hulud virus can reach any developer with a laptop connected to the internet.
 
 The risk is getting worse. AI agents have lowered the barrier to development, which great for innovation, but many new developers aren't aware of package management and supply chain security risks.
 
