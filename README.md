@@ -104,7 +104,7 @@ When a package request arrives:
 2. **Version filtering:** For allowed packages, Bulwark fetches the version list from the upstream registry and filters each version:
    - **Too new?** Block if published < N days ago (quarantine window for zero-days).
    - **Pre-release?** Block alpha/beta/RC if your policy says so.
-   - **Install scripts?** Block npm `preinstall`/`postinstall` scripts unless whitelisted.
+   - **Install scripts?** Block npm `preinstall`/`postinstall` scripts unless allowlisted.
    - **Regex patterns?** Block versions matching custom patterns (e.g., anything with "rc" or "dev").
    - **Pinned approved?** Bypass age/other checks if you've explicitly approved the exact version.
 
@@ -494,13 +494,41 @@ Once the release is published, the [one-click installer](#option-1-one-click-ins
 
 ---
 
+## CLI Flags
+
+All three proxy binaries (`npm-bulwark`, `pypi-bulwark`, `maven-bulwark`) accept the same flags:
+
+| Flag | Description |
+|------|-------------|
+| `-setup` | Install Bulwark with best-practices config and configure the package manager |
+| `-uninstall` | Remove Bulwark and restore the original package manager configuration |
+| `-background` | Start the proxy as a detached background process (no terminal needed). Prints the PID and exits. Output logged to `~/.bulwark/<binary>/daemon.log` |
+| `-config <path>` | Path to configuration file (default: `config.yaml`) |
+| `-auth-token <token>` | Upstream auth bearer token (overrides config) |
+| `-auth-username <user>` | Upstream auth username (overrides config) |
+| `-auth-password <pass>` | Upstream auth password (overrides config) |
+
+**Stopping a background process:**
+
+```bash
+# Find the PID (printed when started, or use ps)
+ps aux | grep bulwark
+
+# Stop it
+kill <PID>
+```
+
+---
+
 ## API Endpoints
 
-| Path           | Purpose                                  |
-|----------------|------------------------------------------|
+| Path | Purpose |
+|------|-------|
 | `GET /healthz` | Liveness probe — always 200 when running |
-| `GET /readyz`  | Readiness probe — checks upstream        |
-| `GET /metrics` | JSON metrics counters                    |
+| `GET /readyz` | Readiness probe — checks upstream |
+| `GET /metrics` | JSON metrics counters |
+| `GET /admin/log-level` | Get current log level |
+| `PUT /admin/log-level` | Change log level at runtime (JSON body: `{"level":"debug"}`) |
 
 ---
 
