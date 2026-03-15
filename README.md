@@ -21,7 +21,7 @@ We built Bulwark as an open-source answer to option 3.
 
 ---
 
-## The 5-Minute Demo: See It Filter Packages in Real-Time
+## 5-Minute Demo: Filter Packages in Real-Time
 
 Watch Bulwark automatically apply safety rules to protect your package stream.
 
@@ -95,7 +95,7 @@ docker builder prune -f
 
 ---
 
-## How It Works (2-Minute Explanation)
+## How It Works
 
 When a package request arrives:
 
