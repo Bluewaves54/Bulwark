@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-03-14
+
+### Improved
+
+- **Enriched 403 responses**: all blocking messages now include a `[Bulwark] package: reason` prefix with the specific rule name and rationale — covers metadata blocks, tarball/artifact download blocks, and external URL blocks across all three proxies.
+
+### Fixed
+
+- Removed stale `RUST_LOG=debug` environment variable from `docker-compose.demo.yml`.
+
+### Documentation
+
+- Rewrote `docs/ARCHITECTURE.md`: fixed C4 diagrams, removed phantom proxies, corrected handler names, replaced non-existent admin endpoints with actual log-level API, fixed config schema references.
+- Expanded README API endpoints into per-ecosystem route tables; added `-background` usage tip to Quick Start.
+- Populated `CHANGELOG.md` with v0.1.0 release notes.
+- Rewrote `CONTRIBUTING.md` with multi-module workflow and Docker E2E test instructions.
+- Fixed `docs/FUTURE_ENHANCEMENTS.md` metrics endpoint description.
+
 ## [0.1.0] — 2026-03-14
 
 ### Added

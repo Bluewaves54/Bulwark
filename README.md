@@ -260,6 +260,14 @@ chmod +x npm-bulwark-linux-amd64
 
 On first run the binary detects that no config exists, performs a full setup (writes best-practices config to `~/.bulwark/<ecosystem>-bulwark/config.yaml`, configures your package manager, and creates an autostart entry), then starts the proxy. No extra downloads or terminal commands needed.
 
+To run in the background (no terminal needed):
+
+```bash
+./npm-bulwark-linux-amd64 -background
+```
+
+This detaches the process, prints the PID, and logs output to `~/.bulwark/npm-bulwark/daemon.log`.
+
 To use a custom config instead of the auto-installed one (requires same format):
 
 ```bash
