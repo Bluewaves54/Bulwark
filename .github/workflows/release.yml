@@ -58,10 +58,11 @@ jobs:
       - name: Build and push Docker images
         run: |
           TAG=${GITHUB_REF_NAME}
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           for mod in pypi-bulwark npm-bulwark maven-bulwark; do
             docker build -f "${mod}/Dockerfile" \
-              -t "ghcr.io/${{ github.repository }}/${mod}:${TAG}" \
-              -t "ghcr.io/${{ github.repository }}/${mod}:latest" .
-            docker push "ghcr.io/${{ github.repository }}/${mod}:${TAG}"
-            docker push "ghcr.io/${{ github.repository }}/${mod}:latest"
+              -t "ghcr.io/${REPO}/${mod}:${TAG}" \
+              -t "ghcr.io/${REPO}/${mod}:latest" .
+            docker push "ghcr.io/${REPO}/${mod}:${TAG}"
+            docker push "ghcr.io/${REPO}/${mod}:latest"
           done
