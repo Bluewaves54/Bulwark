@@ -1,8 +1,8 @@
 # Bulwark
 
-**Bulwark** is a lightweight, zero-dependency security gateway that sits between your package managers and public registries (PyPI, npm, Maven Central). It inspects every package request against configurable policy rules and blocks anything risky — **before it reaches your developers or CI pipeline**.
+**Bulwark** is a lightweight, zero-dependency security gateway that sits between your package managers and public registries (PyPI, npm, Maven Central). It inspects every package request against configurable policy rules and blocks anything risky, before it reaches your developers or CI pipeline.
 
-No database. No UI. No vendor lock-in. Just a single Go binary per ecosystem, a YAML config file, and full control over your software supply chain.
+No database, UI, or vendor lock-in; just a single Go binary per ecosystem, a YAML config file, and full control over your software supply chain.
 
 ---
 
@@ -23,7 +23,7 @@ We built Bulwark as an open-source answer to option 3.
 
 ## The 5-Minute Demo: See It Filter Packages in Real-Time
 
-This is the "aha moment" — watch Bulwark automatically apply safety rules to protect your package stream.
+Watch Bulwark automatically apply safety rules to protect your package stream.
 
 **Step 1: Start Bulwark**
 
@@ -72,7 +72,7 @@ This fails. `bcrypt` has native `install` scripts in every published version, an
 npm install loadsh
 ```
 
-This fails. `loadsh` is 1 edit away from `lodash` — a textbook typosquat. Bulwark's Levenshtein distance check catches it automatically and blocks the install. Real supply chain attacks [use exactly this technique](https://blog.phylum.io/typosquatting-campaign-targets-popular-npm-packages/).
+This fails. `loadsh` is 1 edit away from `lodash`, typical typosquat. Bulwark's Levenshtein distance check catches it automatically and blocks the install. Real supply chain attacks [use exactly this technique](https://blog.phylum.io/typosquatting-campaign-targets-popular-npm-packages/).
 
 **Step 7: Try a Brand-New Package**
 
@@ -99,7 +99,7 @@ docker builder prune -f
 
 When a package request arrives:
 
-1. **Package check:** Does the package name match your deny lists? Is it typosquatted? Does it look suspicious? **Block immediately if any rule fires.**
+1. **Package check:** Does the package name match your deny lists? Is it typosquatted? Does it look suspicious? Block immediately if any rule fires.
 
 2. **Version filtering:** For allowed packages, Bulwark fetches the version list from the upstream registry and filters each version:
    - **Too new?** Block if published < N days ago (quarantine window for zero-days).
@@ -178,11 +178,12 @@ irm https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.p
 
 **Install specific ecosystems only:**
 
+macOS / Linux — install only the npm and pypi proxies:
 ```bash
-# macOS / Linux — install only the npm and pypi proxies:
 curl -fsSL https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.sh | bash -s -- npm pypi
-
-# Windows — install only maven:
+```
+Windows — install only maven:
+```bash
 & { irm https://raw.githubusercontent.com/Bluewaves54/Bulwark/main/scripts/install.ps1 } maven
 ```
 
@@ -233,9 +234,7 @@ The uninstall command restores your original package manager configuration (npm 
 **Using the `-setup` flag directly (if you already have the binary):**
 
 ```bash
-./npm-bulwark -setup       # Install with best-practices config
-./npm-bulwark -background  # Run as a background process (no terminal needed)
-./npm-bulwark -uninstall   # Remove everything
+./npm-bulwark -setup       # Install with best-practices config, or your edited config file
 ```
 
 ### Option 2: Download Pre-Built Binary (Zero-Config)
@@ -251,7 +250,7 @@ Pre-built binaries are available for every release on the [GitHub Releases](../.
 **Quick start — just download and run:**
 
 ```bash
-# Download the binary
+# Download the binary from GitHub or from the command line
 curl -LO https://github.com/Bluewaves54/Bulwark/releases/latest/download/npm-bulwark-linux-amd64
 chmod +x npm-bulwark-linux-amd64
 
@@ -261,19 +260,11 @@ chmod +x npm-bulwark-linux-amd64
 
 On first run the binary detects that no config exists, performs a full setup (writes best-practices config to `~/.bulwark/<ecosystem>-bulwark/config.yaml`, configures your package manager, and creates an autostart entry), then starts the proxy. No extra downloads or terminal commands needed.
 
-To use a custom config instead of the auto-installed one:
+To use a custom config instead of the auto-installed one (requires same format):
 
 ```bash
 ./npm-bulwark-linux-amd64 -config my-custom-config.yaml
 ```
-
-To run the proxy as a **background process** (no terminal window required):
-
-```bash
-./npm-bulwark-linux-amd64 -background
-```
-
-The `-background` flag starts the proxy detached from the terminal and prints the PID. Output is logged to `~/.bulwark/<ecosystem>-bulwark/daemon.log`. Without this flag, the proxy runs in the foreground (useful for debugging or running in a terminal/container).
 
 On macOS use `darwin-arm64`, on Windows use `npm-bulwark-windows-amd64.exe`.
 
