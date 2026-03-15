@@ -34,7 +34,7 @@ The current single-node, in-memory TTL caching structure (`sync.RWMutex` + `map`
 
 ## 3. Observability and Dashboards
 
-While the proxy exposes a robust Prometheus-compatible `/metrics` endpoint, standardizing "day-two" operations will significantly improve developer experience and open-source adoption.
+While the proxy exposes a JSON `/metrics` endpoint with atomic counters, standardizing "day-two" operations will significantly improve developer experience and open-source adoption.
 
 - **Grafana Quick-Start**: Ship pre-built Grafana dashboard configurations (e.g., a `grafana-dashboard.json` inside a `dashboards/` or `deploy/observability/` folder).
 - **Key Metrics Visualization**: Ensure platform engineers can immediately visualize critical health and security metrics, including:

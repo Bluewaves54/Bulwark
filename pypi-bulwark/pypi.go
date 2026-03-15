@@ -354,7 +354,7 @@ func (s *Server) handleExternal(w http.ResponseWriter, r *http.Request) {
 	// Evaluate package/version rules from the download URL (fail-open if extraction fails).
 	if dec := s.evaluateExternalURL(safeURL); dec != nil {
 		s.reqDenied.Add(1)
-		http.Error(w, "blocked by policy", http.StatusForbidden)
+		http.Error(w, fmt.Sprintf("[Bulwark] %s", dec.Reason), http.StatusForbidden)
 		return
 	}
 

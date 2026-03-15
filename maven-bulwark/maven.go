@@ -246,7 +246,7 @@ func (s *Server) handleArtifact(w http.ResponseWriter, r *http.Request) {
 			s.reqDenied.Add(1)
 			s.logger.Warn("artifact request denied: version metadata unavailable for age check",
 				slog.String("group", group), slog.String("artifact", artifact), slog.String("version", version))
-			http.Error(w, "version metadata unavailable - cannot verify age policy", http.StatusForbidden)
+			http.Error(w, fmt.Sprintf("[Bulwark] %s:%s@%s: version metadata unavailable - cannot verify age policy", group, artifact, version), http.StatusForbidden)
 			return
 		}
 
@@ -261,7 +261,7 @@ func (s *Server) handleArtifact(w http.ResponseWriter, r *http.Request) {
 				slog.String("rule", dec.RuleName),
 				slog.String("reason", dec.Reason),
 			)
-			http.Error(w, "version blocked by policy", http.StatusForbidden)
+			http.Error(w, fmt.Sprintf("[Bulwark] %s:%s@%s: %s", group, artifact, version, dec.Reason), http.StatusForbidden)
 			return
 		}
 		if dec.DryRun {
@@ -290,7 +290,7 @@ func (s *Server) enforcePackagePolicy(w http.ResponseWriter, pkgMeta rules.Packa
 			slog.String("rule", pkgDec.RuleName),
 			slog.String("reason", pkgDec.Reason),
 		)
-		http.Error(w, "package blocked by policy", http.StatusForbidden)
+		http.Error(w, fmt.Sprintf("[Bulwark] %s: %s", pkgMeta.Name, pkgDec.Reason), http.StatusForbidden)
 		return true
 	}
 	if pkgDec.DryRun {

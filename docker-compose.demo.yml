@@ -9,8 +9,6 @@ services:
       - "18001:18001"
     volumes:
       - ./npm-bulwark/config-best-practices.yaml:/config.yaml:ro
-    environment:
-      - RUST_LOG=debug
     networks:
       - bulwark-demo
 

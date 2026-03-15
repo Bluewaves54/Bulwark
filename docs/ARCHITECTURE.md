@@ -12,17 +12,13 @@ The Bulwark sits between developer tools and public package registries, acting a
 C4Context
   title System Context — Bulwark
 
-  Person(dev, "Developer / CI Pipeline", "Uses language-specific package managers: pip, npm, mvn, cargo, dotnet, bundler, go get")
+  Person(dev, "Developer / CI Pipeline", "Uses language-specific package managers: pip, npm, mvn")
 
-    System(bulwark, "Bulwark — Bulwark", "HTTP proxy gateway that enforces package security policy. Filters versions by age, pre-release status, namespace, typosquatting, velocity, and custom rules.")
+    System(bulwark, "Bulwark", "HTTP proxy gateway that enforces package security policy. Filters versions by age, pre-release status, namespace, typosquatting, velocity, and custom rules.")
 
   System_Ext(pypi, "PyPI (pypi.org)", "Python package index")
   System_Ext(npm, "npm Registry (registry.npmjs.org)", "JavaScript package registry")
   System_Ext(maven, "Maven Central (repo1.maven.org)", "Java package repository")
-  System_Ext(nuget, "NuGet Gallery (api.nuget.org)", ".NET package registry")
-  System_Ext(cargo, "crates.io", "Rust package registry")
-  System_Ext(rubygems, "RubyGems.org", "Ruby gem registry")
-  System_Ext(gomod, "proxy.golang.org", "Go module proxy")
   System_Ext(enterprise, "Enterprise Registry\n(corporate artifact repository)", "Corporate package mirror and internal artifact store")
   System_Ext(osv, "OSV.dev / NVD", "Vulnerability advisory feeds (future)")
 
@@ -30,11 +26,10 @@ C4Context
     Rel(bulwark, pypi, "Filtered requests (Topology A)", "HTTPS")
     Rel(bulwark, npm, "Filtered requests (Topology A)", "HTTPS")
     Rel(bulwark, maven, "Filtered requests (Topology A)", "HTTPS")
-    Rel(bulwark, nuget, "Filtered requests (Topology A)", "HTTPS")
-    Rel(bulwark, cargo, "Filtered requests (Topology A)", "HTTPS")
     Rel(bulwark, enterprise, "Filtered requests (Topology B)", "HTTPS")
   Rel(enterprise, pypi, "Upstream fetch (Topology B)", "HTTPS")
   Rel(enterprise, npm, "Upstream fetch (Topology B)", "HTTPS")
+  Rel(enterprise, maven, "Upstream fetch (Topology B)", "HTTPS")
     Rel(bulwark, osv, "Advisory feed pull (future)", "HTTPS")
 ```
 
@@ -54,11 +49,7 @@ C4Container
     Container_Boundary(bulwark, "Bulwark") {
     Container(pypi_proxy, "pypi-bulwark", "Go binary", "Implements PyPI Simple Index and PEP 691 protocols. Port 18000.")
     Container(npm_proxy, "npm-bulwark", "Go binary", "Implements npm registry / packument protocol. Port 18001.")
-    Container(maven_proxy, "maven-bulwark", "Go binary [FUTURE]", "Implements Maven 2 repository protocol. Port 18002.")
-    Container(nuget_proxy, "nuget-bulwark", "Go binary [FUTURE]", "Implements NuGet V3 API protocol. Port 18003.")
-    Container(cargo_proxy, "cargo-bulwark", "Go binary [FUTURE]", "Implements Cargo sparse index protocol. Port 18004.")
-    Container(rubygems_proxy, "rubygems-bulwark", "Go binary [FUTURE]", "Implements RubyGems API protocol. Port 18005.")
-    Container(gomod_proxy, "gomod-bulwark", "Go binary [FUTURE]", "Implements Go module proxy protocol. Port 18006.")
+    Container(maven_proxy, "maven-bulwark", "Go binary", "Implements Maven 2 repository protocol. Port 18002.")
 
     ContainerDb(cache, "In-Process Cache", "sync.RWMutex + map + TTL", "Per-binary TTL cache. Keyed by request URL. TTL configurable; max_size_mb is reserved but not yet enforced.")
     Container(rule_engine, "Rule Engine (common/)", "Go module", "Shared: EvaluatePackage, EvaluateVersion, trusted packages, typosquatting, namespace protection, install scripts, velocity detection.")
@@ -69,19 +60,18 @@ C4Container
   Rel(dev, pypi_proxy, "pip / pip3 / uv / poetry / pdm", "HTTP :18000")
   Rel(dev, npm_proxy, "npm / yarn / pnpm", "HTTP :18001")
   Rel(dev, maven_proxy, "mvn / gradle", "HTTP :18002")
-  Rel(dev, nuget_proxy, "dotnet / nuget CLI", "HTTP :18003")
-  Rel(dev, cargo_proxy, "cargo", "HTTP :18004")
-  Rel(dev, rubygems_proxy, "gem / bundler", "HTTP :18005")
-  Rel(dev, gomod_proxy, "go get / GOPROXY", "HTTP :18006")
 
   Rel(pypi_proxy, rule_engine, "uses")
   Rel(npm_proxy, rule_engine, "uses")
+  Rel(maven_proxy, rule_engine, "uses")
   Rel(pypi_proxy, cache, "read/write")
   Rel(npm_proxy, cache, "read/write")
+  Rel(maven_proxy, cache, "read/write")
   Rel(rule_engine, config, "reads")
 
   Rel(pypi_proxy, upstream, "HTTPS (validated)")
   Rel(npm_proxy, upstream, "HTTPS (validated)")
+  Rel(maven_proxy, upstream, "HTTPS (validated)")
 ```
 
 ---
@@ -97,11 +87,11 @@ C4Component
   Container_Boundary(pypi, "pypi-bulwark") {
     Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -background, -config), auto-detects first run and performs setup if needed, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM. The -background flag re-executes the binary as a detached process.")
     Component(server, "server.go — Server", "Go struct", "Registers HTTP routes on ServeMux. Holds references to config, HTTP client, cache, metrics, rule engine, logger.")
-    Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handleExternal, handleProxy, handleHealth, handleReadyz, handleMetrics, handleGetLogLevel, handleSetLogLevel. Each handler follows the filter pipeline.")
-    Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with reason). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with reason. 7. Rewrite and return filtered response.")
-    Component(pypi_helpers, "pypi.go", "Go package", "IsPreRelease (PEP 440), ExtractVersion (filename → version), PEP 691 JSON parsing, HTML simple index parsing.")
-    Component(config_loader, "config.go", "Go package", "LoadConfig, applyDefaults, validate. PyPI-specific: PEP691Enabled, BaseURL, AllowedExternalHosts.")
-    Component(metrics, "Metrics", "atomic.Int64 counters", "RequestsTotal, CacheHits, CacheMisses, VersionsFiltered, PackagesDenied, VelocityAnomalies, etc.")
+    Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handlePackageJSON, handleExternal, handleHealth, handleReady, handleMetrics, handleGetLogLevel, handleSetLogLevel. Each handler follows the filter pipeline.")
+    Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with [Bulwark] reason). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with [Bulwark] reason. 7. Rewrite and return filtered response.")
+    Component(pypi_helpers, "pypi.go", "Go package", "normalizePyPIName, extractPkgVersionFromFilename, filterVersions, filterPyPIJSONResponse, evaluateExternalURL, PEP 691 JSON parsing, HTML simple index building.")
+    Component(config_loader, "config.go (common/config)", "Go package", "LoadConfig, applyDefaults, validate. Shared across all ecosystems. AllowedExternalHosts for PyPI.")
+    Component(metrics, "Metrics", "atomic.Int64 counters", "reqTotal, reqAllowed, reqDenied, reqDryRun.")
   }
 
   Container_Ext(common_rules, "common/rules — RuleEngine", "Go module", "EvaluatePackage, EvaluateVersion, trusted packages, threat detections")
@@ -131,7 +121,6 @@ flowchart TD
         pip["pip / uv / poetry\n~/.pip/pip.conf\nindex-url = http://bulwark:18000/simple/"]
         npm_cli["npm / yarn / pnpm\n.npmrc\nregistry=http://bulwark:18001/"]
         mvn["mvn / gradle\nsettings.xml mirror\nurl: http://bulwark:18002/"]
-        cargo_cli["cargo\n.cargo/config.toml\n[source.crates-io] replace-with = 'bulwark'\n[source.bulwark] registry = 'sparse+http://bulwark:18004/'"]
     end
 
     subgraph Kubernetes / Docker — Bulwark Proxy
@@ -139,30 +128,25 @@ flowchart TD
         PyPI["pypi-bulwark :18000\nTopology A config\nupstream: https://pypi.org"]
         NPM["npm-bulwark :18001\nTopology A config\nupstream: https://registry.npmjs.org"]
         MVN["maven-bulwark :18002\nTopology A config\nupstream: https://repo1.maven.org"]
-        CRG["cargo-bulwark :18004\nTopology A config\nupstream: https://sparse.crates.io"]
     end
 
     subgraph Public Internet
         PyPIReg["pypi.org\nfiles.pythonhosted.org"]
         NpmReg["registry.npmjs.org"]
         MavenCentral["repo1.maven.org"]
-        CratesIO["crates.io / sparse.crates.io"]
     end
 
     pip -->|HTTP :18000| PyPI
     npm_cli -->|HTTP :18001| NPM
     mvn -->|HTTP :18002| MVN
-    cargo_cli -->|HTTP :18004| CRG
 
     PyPI -->|HTTPS filtered| PyPIReg
     NPM -->|HTTPS filtered| NpmReg
     MVN -->|HTTPS filtered| MavenCentral
-    CRG -->|HTTPS filtered| CratesIO
 
     style PyPI fill:#2563eb,color:#fff
     style NPM fill:#2563eb,color:#fff
     style MVN fill:#2563eb,color:#fff
-    style CRG fill:#2563eb,color:#fff
 ```
 
 ---
@@ -211,7 +195,7 @@ flowchart TD
     style ArtNPM fill:#7c3aed,color:#fff
 ```
 
-> **Note — Topology B variant:** Alternatively, the enterprise registry can be configured as the bulwark proxy's **upstream** (i.e. bulwark fetches from the enterprise registry, enterprise registry fetches from public). This variant is activated by setting `upstream.base_url` to the enterprise registry URL. In this case developers point at bulwark, and the enterprise registry sits **downstream** of public registries. Consult the `config-enterprise.yaml` files for both topologies.
+> **Note — Topology B variant:** Alternatively, the enterprise registry can be configured as the bulwark proxy's **upstream** (i.e. bulwark fetches from the enterprise registry, enterprise registry fetches from public). This variant is activated by setting `upstream.url` to the enterprise registry URL. In this case developers point at bulwark, and the enterprise registry sits **downstream** of public registries.
 
 ---
 
@@ -263,13 +247,25 @@ stateDiagram-v2
 
 ### Block Response Behaviour
 
-When a package is entirely blocked — either by a package-level deny rule or because every individual version was removed by version-level rules — the proxy returns **HTTP 403 Forbidden** with a clear policy reason in the response body instead of an empty version list.
+When a package is entirely blocked — either by a package-level deny rule or because every individual version was removed by version-level rules — the proxy returns **HTTP 403 Forbidden** with a clear `[Bulwark]` policy reason in the response body instead of an empty version list.
+
+**Package-level / all-versions-removed blocks (metadata endpoints):**
 
 | Ecosystem | Response Format | Example Body |
 |---|---|---|
 | **npm** | JSON `{"error":"..."}` | `{"error":"[Bulwark] event-stream: package matches deny list"}` |
 | **PyPI** | Plain text | `[Bulwark] requests: all available versions blocked by policy` |
 | **Maven** | Plain text (via `http.Error`) | `[Bulwark] com.example:mylib: all available versions blocked by policy` |
+
+**Direct download blocks (tarball / artifact / external URL):**
+
+| Ecosystem | Endpoint | Example Body |
+|---|---|---|
+| **npm** | tarball `/<pkg>/-/<file>.tgz` | `[Bulwark] lodash@5.0.0-beta.1: pre-release version blocked` |
+| **npm** | tarball (package-level) | `[Bulwark] event-stream: package matches deny list` |
+| **PyPI** | `/external?url=...` | `[Bulwark] name too similar to protected package 'requests'` |
+| **Maven** | artifact `/.../1.0-RC1/lib.jar` | `[Bulwark] com/example:mylib@1.0-RC1: pre-release version blocked` |
+| **Maven** | artifact (package-level) | `[Bulwark] com/example:mylib: package matches deny list` |
 
 This ensures package managers display a meaningful error message (e.g., npm shows the `error` field) instead of confusing messages like `ENOVERSIONS` (npm) or "No matching distribution found" (pip).
 
@@ -426,38 +422,29 @@ sequenceDiagram
     Note over engine: distance ≤ MaxEditDistance (2)
     engine-->>proxy: {Allowed: false, Rule: "typosquatting",\nReason: "name too similar to protected package 'requests'"}
 
-    proxy-->>pip: 403 Forbidden\n{"error":"package denied by policy","package":"reqvests","reason":"name too similar to protected package 'requests'"}
+    proxy-->>pip: 403 Forbidden\n[Bulwark] reqvests: name too similar to protected package 'requests'
 ```
 
 ---
 
-## 11. Sequence Diagram — Rule Reload via Admin API
+## 11. Sequence Diagram — Dynamic Log Level via Admin API
 
-Operator updates the rules YAML file on disk and triggers a live reload.
+Operator changes the log level at runtime without restarting the proxy.
 
 ```mermaid
 sequenceDiagram
     participant ops as Operator
-    participant admin as Admin API :18099
-    participant proxy as Proxy (Server)
-    participant config as Config / RuleEngine
+    participant proxy as Bulwark Proxy
 
-    ops->>ops: Edit rules in config.yaml on disk\n(or via ConfigMap update in k8s)
+    ops->>proxy: GET /admin/log-level
+    proxy-->>ops: 200 {"level":"info"}
 
-    ops->>admin: POST /admin/rules/reload\n(Basic Auth header)
-    admin->>admin: Verify Basic Auth credentials
-    admin->>config: ReadConfig(configPath)
-    config->>config: Validate updated config\nCompile new RuleEngine
-    config-->>admin: new *RuleEngine
+    ops->>proxy: PUT /admin/log-level\n{"level":"debug"}
+    proxy->>proxy: slog.SetLogLoggerLevel(slog.LevelDebug)
+    proxy-->>ops: 200 {"level":"debug"}
 
-    admin->>proxy: atomic.Value.Store(newEngine)
-    Note over proxy: In-flight requests continue using old engine\nNew requests pick up new engine atomically
-
-    admin-->>ops: 200 {"reloaded": true, "rules_count": 12}
-
-    ops->>admin: POST /admin/cache/invalidate\n(flush stale cached responses)
-    admin->>proxy: cache.Invalidate("")
-    admin-->>ops: 200 {"invalidated": true}
+    Note over proxy: All subsequent log entries now include DEBUG level.
+    Note over ops: To apply config file changes, restart the proxy process\nor use the -background flag to re-launch.
 ```
 
 ---
@@ -512,7 +499,7 @@ sequenceDiagram
     proxy->>proxy: log error (level=error)\n{msg: "upstream error", status: 503, url: "/simple/flask/"}
     proxy->>proxy: increment upstream_errors counter
 
-    proxy-->>client: 502 Bad Gateway\n{"error": "upstream unavailable", "status": 503}
+    proxy-->>client: 502 Bad Gateway\nupstream error
 ```
 
 ---
@@ -767,17 +754,17 @@ Both topologies are selected by changing a single configuration key. The same bi
 ```mermaid
 flowchart LR
     subgraph "Topology A — config.yaml"
-        A1["upstream:\n  base_url: https://pypi.org\n  # (or registry.npmjs.org, etc.)"]
+        A1["upstream:\n  url: https://pypi.org\n  # (or registry.npmjs.org, etc.)"]
     end
 
     subgraph "Topology B — config-enterprise.yaml"
-        B1["upstream:\n  base_url: https://registry.corp.example/pypi\n  auth:\n    token: env:BULWARK_AUTH_TOKEN\n  tls:\n    ca_cert_file: /certs/internal-ca.pem"]
+        B1["upstream:\n  url: https://registry.corp.example/pypi\n  token: env:BULWARK_AUTH_TOKEN\n  tls:\n    insecure_skip_verify: false"]
     end
 
     A1 --> SAME["Same binary\nSame rule engine\nSame filtering pipeline"]
     B1 --> SAME
 
-    SAME --> OUT1["Upstream requests\ngo to PyPI directly\n(Topology A)"]
+    SAME --> OUT1["Upstream requests\ngo to public registries directly\n(Topology A)"]
     SAME --> OUT2["Upstream requests\ngo to enterprise registry\n(Topology B)"]
 ```
 

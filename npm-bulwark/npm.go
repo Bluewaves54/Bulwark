@@ -182,7 +182,7 @@ func (s *Server) handleTarball(w http.ResponseWriter, r *http.Request) {
 			slog.String("rule", pkgDec.RuleName),
 			slog.String("reason", pkgDec.Reason),
 		)
-		http.Error(w, "package blocked by policy", http.StatusForbidden)
+		http.Error(w, fmt.Sprintf("[Bulwark] %s: %s", pkg, pkgDec.Reason), http.StatusForbidden)
 		return
 	}
 	if pkgDec.DryRun {
@@ -198,7 +198,7 @@ func (s *Server) handleTarball(w http.ResponseWriter, r *http.Request) {
 			s.reqDenied.Add(1)
 			s.logger.Warn("tarball request denied: version metadata unavailable for age check",
 				slog.String("package", pkg), slog.String("version", version))
-			http.Error(w, "version metadata unavailable - cannot verify age policy", http.StatusForbidden)
+			http.Error(w, fmt.Sprintf("[Bulwark] %s@%s: version metadata unavailable - cannot verify age policy", pkg, version), http.StatusForbidden)
 			return
 		}
 
@@ -211,7 +211,7 @@ func (s *Server) handleTarball(w http.ResponseWriter, r *http.Request) {
 				slog.String("rule", dec.RuleName),
 				slog.String("reason", dec.Reason),
 			)
-			http.Error(w, "version blocked by policy", http.StatusForbidden)
+			http.Error(w, fmt.Sprintf("[Bulwark] %s@%s: %s", pkg, version, dec.Reason), http.StatusForbidden)
 			return
 		}
 		if dec.DryRun {

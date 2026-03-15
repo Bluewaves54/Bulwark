@@ -108,7 +108,7 @@ When a package request arrives:
    - **Regex patterns?** Block versions matching custom patterns (e.g., anything with "rc" or "dev").
    - **Pinned approved?** Bypass age/other checks if you've explicitly approved the exact version.
 
-3. **Response rewriting:** Remove blocked versions from the response. When *some* versions pass policy, the filtered response is returned normally. When a package is entirely blocked (package-level deny or all versions removed), Bulwark returns **HTTP 403** with a clear policy reason so your package manager displays a meaningful error instead of a confusing "no versions found" message.
+3. **Response rewriting:** Remove blocked versions from the response. When *some* versions pass policy, the filtered response is returned normally. When a package is entirely blocked (package-level deny or all versions removed), Bulwark returns **HTTP 403** with a `[Bulwark] package: reason` message so your package manager displays a meaningful error instead of a confusing "no versions found" message. Direct download blocks (tarballs, artifacts) include the same structured message with the specific version and rule reason.
 
 4. **Caching:** Cache filtered responses in memory (configurable TTL) so repeated requests don't hit the upstream registry repeatedly.
 
@@ -145,7 +145,7 @@ Developer → npm/pip/mvn → Enterprise Registry → Bulwark → PyPI/npm/Maven
 - **PyPI**: PEP 691 JSON + HTML simple index, `/pypi/<pkg>/json` passthrough, external tarball proxy with allowlist.
 - **npm**: Packument filtering, tarball proxy, scoped packages (`@scope/pkg`), install script detection.
 - **Maven**: `maven-metadata.xml` filtering, checksum invalidation, artifact policy, SNAPSHOT blocking.
-- **Shared rule engine:** Trusted package allowlists, pre-release blocking, age quarantine, version pinning, deny lists, regex patterns, namespace protection, typosquatting detection, velocity anomalies, dry-run mode.
+- **Shared rule engine:** Trusted package allowlists, pre-release blocking, age quarantine, license filtering, version pinning, deny lists, regex patterns, namespace protection, typosquatting detection, velocity anomalies, dry-run mode.
 - **Operational:** YAML config, structured logging (log/slog), dynamic log-level API, disk file logging, in-memory TTL cache, `/healthz` & `/readyz` probes, JSON metrics.
 
 ---
@@ -513,13 +513,39 @@ kill <PID>
 
 ## API Endpoints
 
+**Common endpoints (all three proxies):**
+
 | Path | Purpose |
 |------|-------|
 | `GET /healthz` | Liveness probe — always 200 when running |
 | `GET /readyz` | Readiness probe — checks upstream |
-| `GET /metrics` | JSON metrics counters |
+| `GET /metrics` | JSON metrics counters (enabled via config) |
 | `GET /admin/log-level` | Get current log level |
 | `PUT /admin/log-level` | Change log level at runtime (JSON body: `{"level":"debug"}`) |
+
+**PyPI-specific (port 18000):**
+
+| Path | Purpose |
+|------|-------|
+| `GET /simple/{pkg}/` | PEP 503/691 simple index — returns filtered HTML or JSON |
+| `GET /simple/{pkg}` | Redirects to trailing-slash form |
+| `GET /pypi/{pkg}/json` | PyPI JSON metadata API — filtered releases |
+| `GET /external?url=...` | Proxied tarball download (host allowlist enforced) |
+
+**npm-specific (port 18001):**
+
+| Path | Purpose |
+|------|-------|
+| `GET /{pkg}` | Filtered packument (metadata + versions) |
+| `GET /{pkg}/-/{file}.tgz` | Proxied tarball download with version policy check |
+
+**Maven-specific (port 18002):**
+
+| Path | Purpose |
+|------|-------|
+| `GET /.../maven-metadata.xml` | Filtered metadata — blocked versions removed from XML |
+| `GET /.../artifact-version.jar` | Proxied artifact download with version policy check |
+| `GET /.../artifact.sha1` | Checksum sidecar — returns 404 if base file was filtered |
 
 ---
 
