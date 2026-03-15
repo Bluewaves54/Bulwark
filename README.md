@@ -233,7 +233,8 @@ The uninstall command restores your original package manager configuration (npm 
 **Using the `-setup` flag directly (if you already have the binary):**
 
 ```bash
-./npm-bulwark -setup      # Install with best-practices config
+./npm-bulwark -setup       # Install with best-practices config
+./npm-bulwark -background  # Run as a background process (no terminal needed)
 ./npm-bulwark -uninstall   # Remove everything
 ```
 
@@ -265,6 +266,14 @@ To use a custom config instead of the auto-installed one:
 ```bash
 ./npm-bulwark-linux-amd64 -config my-custom-config.yaml
 ```
+
+To run the proxy as a **background process** (no terminal window required):
+
+```bash
+./npm-bulwark-linux-amd64 -background
+```
+
+The `-background` flag starts the proxy detached from the terminal and prints the PID. Output is logged to `~/.bulwark/<ecosystem>-bulwark/daemon.log`. Without this flag, the proxy runs in the foreground (useful for debugging or running in a terminal/container).
 
 On macOS use `darwin-arm64`, on Windows use `npm-bulwark-windows-amd64.exe`.
 

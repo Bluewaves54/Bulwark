@@ -95,7 +95,7 @@ C4Component
   title Component Diagram — pypi-bulwark binary
 
   Container_Boundary(pypi, "pypi-bulwark") {
-    Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -config), auto-detects first run and performs setup if needed, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM.")
+    Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -background, -config), auto-detects first run and performs setup if needed, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM. The -background flag re-executes the binary as a detached process.")
     Component(server, "server.go — Server", "Go struct", "Registers HTTP routes on ServeMux. Holds references to config, HTTP client, cache, metrics, rule engine, logger.")
     Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handleExternal, handleProxy, handleHealth, handleReadyz, handleMetrics, handleGetLogLevel, handleSetLogLevel. Each handler follows the filter pipeline.")
     Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with reason). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with reason. 7. Rewrite and return filtered response.")
@@ -869,6 +869,7 @@ flowchart TD
 - **`//go:embed`** for config: the binary is self-contained; no need to download config separately.
 - **First-run auto-setup**: `resolveConfig()` detects missing config and calls `installer.SetupFilesOnly()` (writes files but does not activate launchd/systemd, since the running process itself serves as the proxy).
 - **`run()` function**: the proxy lifecycle (`handleInstallMode → resolveConfig → initServer → runServer`) is extracted from `main()` into a testable `run()` function that returns an error instead of calling `os.Exit`.
+- **`-background` flag**: re-executes the binary as a detached child process (via `installer.Daemonize`). On Unix, uses `Setsid` to create a new session; on Windows, uses `CREATE_NEW_PROCESS_GROUP`. Output is logged to `~/.bulwark/<binary>/daemon.log`. Without this flag, the proxy runs in the foreground.
 - **`goos` parameter** on all file-system functions: enables cross-platform unit testing without mocking `runtime.GOOS`.
 - **Separation of `SetupFiles` vs `ActivateServices`**: file-only operations are fully unit-testable with `t.TempDir()`; external commands (`launchctl`, `systemctl`, `npm`) are isolated with documented coverage exemptions.
 - **Maven backup/restore**: existing `settings.xml` is backed up to `settings.xml.bulwark-backup` on setup and restored on uninstall.

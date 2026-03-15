@@ -1345,7 +1345,7 @@ func TestHandleInstallModeError(t *testing.T) {
 func TestRunBadConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := run(ctx, "/no/such/config.yaml", true, false, false, "", "", "", io.Discard)
+	err := run(ctx, "/no/such/config.yaml", true, false, false, false, "", "", "", io.Discard)
 	if err == nil {
 		t.Error("expected error for missing config")
 	}
@@ -1360,7 +1360,7 @@ func TestRunNormalStartup(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := run(ctx, cfgFile, true, false, false, "", "", "", io.Discard)
+	err := run(ctx, cfgFile, true, false, false, false, "", "", "", io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
