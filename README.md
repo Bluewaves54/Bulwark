@@ -6,18 +6,16 @@ No database, UI, or vendor lock-in; just a single Go binary per ecosystem, a YAM
 
 ---
 
-## Why We Built This
+## Why
 
 Software supply chain attacks are the fastest-growing threat vector in the industry. From [event-stream](https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident) and [ua-parser-js](https://github.com/nicercs/ua-parser-js-security) to [PyPI malware campaigns](https://blog.phylum.io/pypi-malware-replaces-crypto-addresses-in-developer-clipboards/), these attacks hit organizations of every size. Threats like the Shai-Hulud virus can reach any developer with a laptop connected to the internet.
 
-The risk is getting worse. AI agents have lowered the barrier to development — great for innovation, but many new developers lack awareness of package management and supply chain security. They pull dependencies without thinking, trusting that "public packages must be safe."
+The risk is getting worse. AI agents have lowered the barrier to development, which great for innovation, but many new developers aren't aware of package management and supply chain security risks.
 
 Teams face three choices:
 1. **Do nothing** — trust the open-source ecosystem. Fast, but completely unprotected.
 2. **Buy a commercial platform** — enterprise artifact repositories and SCA scanners exist. You get controls, but at significant cost with opaque rule engines and vendor lock-in.
 3. **Bulwark** — a transparent, self-hosted policy layer *you* own. Write rules in YAML. Version-control them. Deploy on Friday afternoon. Immediately protect your org.
-
-We built Bulwark as an open-source answer to option 3.
 
 ---
 
