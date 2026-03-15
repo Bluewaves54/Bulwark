@@ -162,7 +162,6 @@ Developer → npm/pip/mvn → Enterprise Registry → Bulwark → PyPI/npm/Maven
 
 The fastest way to get started. The installer downloads the correct binary for your platform, installs it, configures your package manager, creates an autostart entry, and applies the best-practices security rules — all in one command.
 
-> **Note:** This requires at least one [GitHub Release](../../releases) to exist. Maintainers: see [Releasing](#releasing) below.
 
 **macOS / Linux:**
 
@@ -470,26 +469,6 @@ cd e2e\docker && .\run.ps1         # Windows PowerShell
 ```
 
 See [e2e/docker/README.md](e2e/docker/README.md) for details.
-
----
-
-## Releasing
-
-Binaries are built and published automatically by the GitHub Actions [release workflow](.github/workflows/release.yml) when a version tag is pushed.
-
-```bash
-# Tag the current commit and push — this triggers the release workflow
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The workflow will:
-1. Run all unit tests.
-2. Cross-compile binaries for 6 platforms (linux/darwin/windows × amd64/arm64).
-3. Build and push Docker images to `ghcr.io`.
-4. Create a GitHub Release with all binaries and checksums attached.
-
-Once the release is published, the [one-click installer](#option-1-one-click-installer-recommended-for-non-developers) and [pre-built binary downloads](#option-2-download-pre-built-binary) will work.
 
 ---
 
