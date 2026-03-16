@@ -69,7 +69,7 @@ func TestNpmScopedPackumentLive(t *testing.T) {
 	assertStatus(t, resp, 200)
 
 	ct := resp.Header.Get("Content-Type")
-	if !strings.Contains(ct, "application/json") && !strings.Contains(ct, "application/vnd.npm.install-v1+json") {
+	if !strings.Contains(ct, mimeJSON) && !strings.Contains(ct, "application/vnd.npm.install-v1+json") {
 		t.Errorf("unexpected content type for packument: %q", ct)
 	}
 }

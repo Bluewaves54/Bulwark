@@ -86,7 +86,7 @@ func benchMavenE2ESetup(b *testing.B, n int) (proxyURL string, cleanup func()) {
 	b.Helper()
 	body := buildMavenMetadataXML(n)
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Content-Type", mimeXML)
 		w.Write(body) //nolint:errcheck
 	}))
 	cfg := &config.Config{

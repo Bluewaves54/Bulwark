@@ -716,7 +716,7 @@ func TestTarballTrustedPackageBypassesAgeCheck(t *testing.T) {
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Return packument with no time info (PublishedAt will be zero).
 		if !strings.Contains(r.URL.Path, "/-/") {
-			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Type", mimeJSON)
 			fmt.Fprint(w, `{"name":"lodash","versions":{"4.17.21":{"dist":{"tarball":"http://localhost/lodash/-/lodash-4.17.21.tgz"}}},"dist-tags":{"latest":"4.17.21"},"time":{}}`)
 			return
 		}

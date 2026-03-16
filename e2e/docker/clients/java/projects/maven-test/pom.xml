@@ -6,15 +6,15 @@
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.pkguard.e2e</groupId>
+    <groupId>com.bulwark.e2e</groupId>
     <artifactId>maven-e2e-test</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>pkguard-e2e-maven-test</name>
-    <description>E2E test project for Maven dependency resolution through PKGuard</description>
+    <name>bulwark-e2e-maven-test</name>
+    <description>E2E test project for Maven dependency resolution through Bulwark</description>
 
-    <!-- Repository is overridden at runtime via settings.xml to point at the PKGuard -->
+    <!-- Repository is overridden at runtime via settings.xml to point at the Bulwark -->
     <dependencies>
         <dependency>
             <groupId>junit</groupId>

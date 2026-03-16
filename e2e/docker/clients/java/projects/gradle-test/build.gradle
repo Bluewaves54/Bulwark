@@ -6,10 +6,10 @@ plugins {
     id 'java'
 }
 
-group = 'com.pkguard.e2e'
+group = 'com.bulwark.e2e'
 version = '1.0.0'
 
-// Use the PKGuard as the sole Maven repository.
+// Use the Bulwark as the sole Maven repository.
 repositories {
     maven {
         url = System.getenv('MAVEN_PROXY_URL') ?: 'http://maven-proxy:8080'

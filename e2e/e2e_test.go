@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+const (
+	mimeJSON = "application/json"
+	mimeXML  = "application/xml"
+)
+
 // Shared proxy URLs — started once in TestMain with allow-all configs.
 var (
 	pypiProxyURL  string
@@ -34,9 +39,13 @@ var (
 // test suite, then terminates the proxies.
 // The entire suite is skipped when BULWARK_E2E_LIVE is not "true".
 func TestMain(m *testing.M) {
+	os.Exit(runMain(m))
+}
+
+func runMain(m *testing.M) int {
 	if os.Getenv("BULWARK_E2E_LIVE") != "true" {
 		fmt.Fprintln(os.Stderr, "e2e: skipping — set BULWARK_E2E_LIVE=true to run live tests")
-		os.Exit(0)
+		return 0
 	}
 
 	wd, err := os.Getwd()
@@ -51,26 +60,24 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("e2e: mktempdir: %v", err)
 	}
+	defer os.RemoveAll(tmpDir)
 
 	pypiProxyBinPath = buildBinaryMain(repoRoot, pypiDir, tmpDir)
 	npmProxyBinPath = buildBinaryMain(repoRoot, npmDir, tmpDir)
 	mavenProxyBinPath = buildBinaryMain(repoRoot, mavenDir, tmpDir)
 
 	pypiProxy := startProxyMain(pypiProxyBinPath, filepath.Join(cfgDir, "pypi-allow-all.yaml"), pypiE2EPort)
+	defer pypiProxy.Stop()
 	npmProxy := startProxyMain(npmProxyBinPath, filepath.Join(cfgDir, "npm-allow-all.yaml"), npmE2EPort)
+	defer npmProxy.Stop()
 	mavenProxy := startProxyMain(mavenProxyBinPath, filepath.Join(cfgDir, "maven-allow-all.yaml"), mavenE2EPort)
+	defer mavenProxy.Stop()
 
 	pypiProxyURL = pypiProxy.BaseURL
 	npmProxyURL = npmProxy.BaseURL
 	mavenProxyURL = mavenProxy.BaseURL
 
-	code := m.Run()
-
-	pypiProxy.Stop()
-	npmProxy.Stop()
-	mavenProxy.Stop()
-	_ = os.RemoveAll(tmpDir)
-	os.Exit(code)
+	return m.Run()
 }
 
 // buildBinaryMain compiles a proxy module without a *testing.T (for use in TestMain).
@@ -118,4 +125,3 @@ func pollHealthzMain(healthURL string) {
 	}
 	log.Fatalf("e2e: proxy did not become healthy at %s within 15s", healthURL)
 }
-

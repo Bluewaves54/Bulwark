@@ -82,7 +82,7 @@ func benchPyPIE2ESetup(b *testing.B, n int) (proxyURL string, cleanup func()) {
 	b.Helper()
 	body := buildPyPIJSONBody("requests", n)
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", mimeJSON)
 		w.Write(body) //nolint:errcheck
 	}))
 	cfg := &config.Config{

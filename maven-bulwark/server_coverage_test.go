@@ -1266,7 +1266,7 @@ func TestHandleMetadataFilterXMLFail(t *testing.T) {
 		`<version>1.0.0</version>` +
 		`</versions><lastUpdated>20240601</lastUpdated></versioning></metadata>`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Content-Type", mimeXML)
 		w.Write([]byte(badMetadata)) //nolint:errcheck
 	}))
 	defer upstream.Close()
@@ -1313,7 +1313,7 @@ func TestHandleMetadataAllVersionsRemoved(t *testing.T) {
 		`<version>1.0.0</version>` +
 		`</versions><lastUpdated>20240601</lastUpdated></versioning></metadata>`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Content-Type", mimeXML)
 		w.Write([]byte(metadata)) //nolint:errcheck
 	}))
 	defer upstream.Close()
@@ -1369,7 +1369,7 @@ func TestHandleMetadataUpstreamNon200(t *testing.T) {
 func TestHandleMetadataParseVersionMetaFail(t *testing.T) {
 	badXML := `<<<not valid xml at all>>>`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Content-Type", mimeXML)
 		w.Write([]byte(badXML)) //nolint:errcheck
 	}))
 	defer upstream.Close()
@@ -1396,7 +1396,7 @@ func TestHandleMetadataParseVersionMetaFail(t *testing.T) {
 func TestHandleMetadataParseVersionMetaFailClosed(t *testing.T) {
 	badXML := `<<<not valid xml at all>>>`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Content-Type", mimeXML)
 		w.Write([]byte(badXML)) //nolint:errcheck
 	}))
 	defer upstream.Close()
@@ -1427,7 +1427,7 @@ func TestHandleMetadataPackageBlocked(t *testing.T) {
 		`<version>1.0.0</version>` +
 		`</versions><lastUpdated>20240601</lastUpdated></versioning></metadata>`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Content-Type", mimeXML)
 		w.Write([]byte(metadata)) //nolint:errcheck
 	}))
 	defer upstream.Close()

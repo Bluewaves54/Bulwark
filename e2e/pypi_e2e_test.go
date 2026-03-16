@@ -47,7 +47,7 @@ func TestPyPIPackageJSONLive(t *testing.T) {
 	assertStatus(t, resp, 200)
 
 	ct := resp.Header.Get("Content-Type")
-	if !strings.Contains(ct, "application/json") {
+	if !strings.Contains(ct, mimeJSON) {
 		t.Errorf("expected JSON content type, got %q", ct)
 	}
 	body, err := io.ReadAll(resp.Body)
@@ -96,7 +96,7 @@ func TestPyPIPEP691JSONFormatLive(t *testing.T) {
 	assertStatus(t, resp, 200)
 
 	ct := resp.Header.Get("Content-Type")
-	if !strings.Contains(ct, "application/vnd.pypi.simple") && !strings.Contains(ct, "application/json") {
+	if !strings.Contains(ct, "application/vnd.pypi.simple") && !strings.Contains(ct, mimeJSON) {
 		t.Errorf("expected PEP 691 JSON content type, got %q", ct)
 	}
 }
