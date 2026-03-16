@@ -68,10 +68,20 @@ func resolveConfig(cfgFlag string, explicit bool, proxy installer.ProxyInfo, hom
 	return installer.InstalledConfigPath(proxy, home, goos), nil
 }
 
+// version is set via ldflags at build time.
+var version = "dev"
+
 // run drives the proxy lifecycle after flags are parsed. It returns an error
 // instead of calling os.Exit, making it testable.
-func run(ctx context.Context, cfgPath string, configExplicit, setupMode, uninstallMode, backgroundMode bool,
+func run(ctx context.Context, cfgPath string, configExplicit, setupMode, uninstallMode, uninstallAllMode, updateMode, backgroundMode bool,
 	authToken, authUser, authPass string, out io.Writer) error {
+
+	if uninstallAllMode {
+		return installer.UninstallAll(out)
+	}
+	if updateMode {
+		return installer.Update(version, out)
+	}
 
 	proxy := newProxyInfo()
 	handled, err := handleInstallMode(setupMode, uninstallMode, proxy, out, installer.Setup, installer.Uninstall)
@@ -115,6 +125,8 @@ func run(ctx context.Context, cfgPath string, configExplicit, setupMode, uninsta
 func main() {
 	setupMode := flag.Bool("setup", false, "install Bulwark with best-practices config and configure Maven")
 	uninstallMode := flag.Bool("uninstall", false, "remove Bulwark and restore Maven settings")
+	uninstallAllMode := flag.Bool("uninstall-all", false, "remove all Bulwark proxies and restore all package manager configs")
+	updateMode := flag.Bool("update", false, "update all installed Bulwark proxies to the latest stable release")
 	backgroundMode := flag.Bool("background", false, "start the proxy as a background process")
 	cfgPath := flag.String("config", "config.yaml", "path to configuration file")
 	authToken := flag.String("auth-token", "", "upstream auth bearer token (overrides config)")
@@ -132,7 +144,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := run(ctx, *cfgPath, configExplicit, *setupMode, *uninstallMode, *backgroundMode, *authToken, *authUser, *authPass, os.Stdout); err != nil {
+	if err := run(ctx, *cfgPath, configExplicit, *setupMode, *uninstallMode, *uninstallAllMode, *updateMode, *backgroundMode, *authToken, *authUser, *authPass, os.Stdout); err != nil {
 		slog.Default().Error(err.Error())
 		os.Exit(1)
 	}

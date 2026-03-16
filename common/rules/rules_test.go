@@ -64,6 +64,36 @@ func TestEvaluatePackageNamespaceViolation(t *testing.T) {
 	}
 }
 
+func TestEvaluatePackageNamespaceExactMatch(t *testing.T) {
+	policy := config.PolicyConfig{Rules: []config.PackageRule{
+		{Name: ruleDefault, NamespaceProtection: config.NamespaceCfg{
+			Enabled:          true,
+			InternalPatterns: []string{"secret-pkg"},
+		}},
+	}}
+	engine := rules.New(policy)
+
+	dec := engine.EvaluatePackage(rules.PackageMeta{Name: "secret-pkg"})
+	if dec.Allow {
+		t.Error("exact namespace match should be denied")
+	}
+	if dec.Reason != "namespace_violation" {
+		t.Errorf("reason: want namespace_violation, got %q", dec.Reason)
+	}
+}
+
+func TestCheckMetadataAnomaliesNonStringValues(t *testing.T) {
+	meta := map[string]interface{}{
+		"repository":  42,
+		"license":     true,
+		"description": []string{"a"},
+	}
+	anomalies := rules.CheckMetadataAnomalies(meta)
+	if len(anomalies) != 0 {
+		t.Errorf("non-string non-empty values should not be flagged, got %d anomalies", len(anomalies))
+	}
+}
+
 func TestEvaluatePackageTyposquat(t *testing.T) {
 	policy := config.PolicyConfig{Rules: []config.PackageRule{
 		{Name: ruleDefault, TyposquatCheck: config.TyposquatCfg{
@@ -318,6 +348,8 @@ func TestIsPreRelease(t *testing.T) {
 		{"1.0-M1", true},
 		{"1.0-M10", true},
 		{"4.0.0", false},
+		{"1.0.0-custom", true},  // SemVer hyphen with non-qualifier label
+		{"1.0.0-preview", true}, // SemVer hyphen with non-qualifier label
 	}
 	for _, tc := range cases {
 		got := rules.IsPreRelease(tc.version)

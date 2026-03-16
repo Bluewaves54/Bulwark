@@ -92,6 +92,40 @@ type InstallScriptsConfig struct {
 	Reason string `yaml:"reason"`
 }
 
+// Valid logging levels.
+const (
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
+)
+
+// Valid logging formats.
+const (
+	LogFormatText = "text"
+	LogFormatJSON = "json"
+)
+
+// ValidLogLevel reports whether s is a recognised log level.
+func ValidLogLevel(s string) bool {
+	switch s {
+	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidLogFormat reports whether s is a recognised log format.
+func ValidLogFormat(s string) bool {
+	switch s {
+	case LogFormatText, LogFormatJSON:
+		return true
+	default:
+		return false
+	}
+}
+
 // FailModeOpen passes the request through when the policy engine cannot
 // inspect metadata (e.g. parse failure), logging a warning. This is the
 // default and preserves zero-friction adoption.
@@ -234,18 +268,32 @@ func (c *Config) Validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port must be 1-65535, got %d", c.Server.Port)
 	}
-	for _, r := range c.Policy.Rules {
+	if err := validateRules(c.Policy); err != nil {
+		return err
+	}
+	if !ValidLogLevel(c.Logging.Level) {
+		return fmt.Errorf("logging.level must be one of debug, info, warn, error; got %q", c.Logging.Level)
+	}
+	if !ValidLogFormat(c.Logging.Format) {
+		return fmt.Errorf("logging.format must be %q or %q, got %q", LogFormatText, LogFormatJSON, c.Logging.Format)
+	}
+	return nil
+}
+
+// validateRules checks policy rule and version pattern fields.
+func validateRules(p PolicyConfig) error {
+	for _, r := range p.Rules {
 		if r.Action != "deny" && r.Action != "allow" && r.Action != "" {
 			return fmt.Errorf("rule %q: action must be \"deny\" or \"allow\", got %q", r.Name, r.Action)
 		}
 	}
-	for _, vpr := range c.Policy.VersionPatterns {
+	for _, vpr := range p.VersionPatterns {
 		if vpr.Action != "deny" && vpr.Action != "allow" {
 			return fmt.Errorf("version_pattern rule %q: action must be \"deny\" or \"allow\", got %q", vpr.Name, vpr.Action)
 		}
 	}
-	if c.Policy.FailMode != FailModeOpen && c.Policy.FailMode != FailModeClosed {
-		return fmt.Errorf("policy.fail_mode must be %q or %q, got %q", FailModeOpen, FailModeClosed, c.Policy.FailMode)
+	if p.FailMode != FailModeOpen && p.FailMode != FailModeClosed {
+		return fmt.Errorf("policy.fail_mode must be %q or %q, got %q", FailModeOpen, FailModeClosed, p.FailMode)
 	}
 	return nil
 }
@@ -286,5 +334,11 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("BULWARK_AUTH_PASSWORD"); v != "" {
 		cfg.Upstream.Password = v
+	}
+	if v := os.Getenv("BULWARK_LOG_LEVEL"); v != "" {
+		lvl := strings.ToLower(v)
+		if ValidLogLevel(lvl) {
+			cfg.Logging.Level = lvl
+		}
 	}
 }

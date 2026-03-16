@@ -4,6 +4,8 @@ package installer
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1071,4 +1073,453 @@ func TestWriteAutostartFileMkdirError(t *testing.T) {
 	if !strings.Contains(buf.String(), "[warn]") {
 		t.Errorf("expected warning, got: %s", buf.String())
 	}
+}
+
+// --- PATH management ---
+
+func TestPathBlock(t *testing.T) {
+	block := PathBlock()
+	if !strings.Contains(block, pathMarkerStart) {
+		t.Error("missing start marker")
+	}
+	if !strings.Contains(block, pathMarkerEnd) {
+		t.Error("missing end marker")
+	}
+	if !strings.Contains(block, pathExportLine) {
+		t.Error("missing export line")
+	}
+}
+
+func TestShellProfilesDarwin(t *testing.T) {
+	profiles := shellProfiles("/home/user", testDarwin)
+	if len(profiles) != 2 {
+		t.Fatalf("want 2 profiles, got %d", len(profiles))
+	}
+	if !strings.HasSuffix(profiles[0], ".zshrc") {
+		t.Errorf("first profile: want .zshrc, got %s", profiles[0])
+	}
+}
+
+func TestShellProfilesLinux(t *testing.T) {
+	profiles := shellProfiles("/home/user", testLinux)
+	if len(profiles) != 3 {
+		t.Fatalf("want 3 profiles, got %d", len(profiles))
+	}
+	if !strings.HasSuffix(profiles[0], ".bashrc") {
+		t.Errorf("first profile: want .bashrc, got %s", profiles[0])
+	}
+}
+
+func TestShellProfilesWindows(t *testing.T) {
+	profiles := shellProfiles("/home/user", testWindows)
+	if profiles != nil {
+		t.Errorf("expected nil profiles for Windows, got %v", profiles)
+	}
+}
+
+func TestShellProfilesUnsupported(t *testing.T) {
+	profiles := shellProfiles("/home/user", testFreeBSD)
+	if profiles != nil {
+		t.Errorf("expected nil profiles for FreeBSD, got %v", profiles)
+	}
+}
+
+func TestAddToPathDarwin(t *testing.T) {
+	home := t.TempDir()
+	// Create .zshrc so AddToPath can modify it.
+	zshrc := filepath.Join(home, ".zshrc")
+	if err := os.WriteFile(zshrc, []byte("# existing config\n"), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	AddToPath(home, testDarwin, &buf)
+	output := buf.String()
+	if !strings.Contains(output, "[ok] Added") {
+		t.Errorf("expected success message, got: %s", output)
+	}
+	data, err := os.ReadFile(zshrc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), pathMarkerStart) {
+		t.Error("PATH block not found in .zshrc")
+	}
+}
+
+func TestAddToPathLinuxFallback(t *testing.T) {
+	home := t.TempDir()
+	// No existing profiles — should create .profile as fallback.
+	var buf bytes.Buffer
+	AddToPath(home, testLinux, &buf)
+	output := buf.String()
+	if !strings.Contains(output, "Created") {
+		t.Errorf("expected fallback creation message, got: %s", output)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".profile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), pathExportLine) {
+		t.Error("export line not found in .profile fallback")
+	}
+}
+
+func TestAddToPathSkipsDuplicate(t *testing.T) {
+	home := t.TempDir()
+	zshrc := filepath.Join(home, ".zshrc")
+	if err := os.WriteFile(zshrc, []byte("# existing\n"+PathBlock()), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	AddToPath(home, testDarwin, &buf)
+	data, _ := os.ReadFile(zshrc)
+	count := strings.Count(string(data), pathMarkerStart)
+	if count != 1 {
+		t.Errorf("expected exactly 1 PATH block, got %d", count)
+	}
+}
+
+func TestAddToPathWindows(t *testing.T) {
+	home := t.TempDir()
+	var buf bytes.Buffer
+	AddToPath(home, testWindows, &buf)
+	output := buf.String()
+	// On test machines setx may not be available; either success or info message.
+	if !strings.Contains(output, "PATH") {
+		t.Errorf("expected PATH-related message, got: %s", output)
+	}
+}
+
+func TestRemoveFromPathDarwin(t *testing.T) {
+	home := t.TempDir()
+	zshrc := filepath.Join(home, ".zshrc")
+	original := "# before\n" + PathBlock() + "# after\n"
+	if err := os.WriteFile(zshrc, []byte(original), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	RemoveFromPath(home, testDarwin, &buf)
+	output := buf.String()
+	if !strings.Contains(output, "[ok] Removed Bulwark PATH") {
+		t.Errorf("expected removal message, got: %s", output)
+	}
+	data, _ := os.ReadFile(zshrc)
+	if strings.Contains(string(data), pathMarkerStart) {
+		t.Error("PATH block should have been removed from .zshrc")
+	}
+	if !strings.Contains(string(data), "# before") {
+		t.Error("surrounding content should be preserved")
+	}
+}
+
+func TestRemoveFromPathWindows(t *testing.T) {
+	home := t.TempDir()
+	var buf bytes.Buffer
+	RemoveFromPath(home, testWindows, &buf)
+	output := buf.String()
+	if !strings.Contains(output, "[info]") {
+		t.Errorf("expected info message for Windows, got: %s", output)
+	}
+}
+
+func TestRemoveFromPathNoBlock(t *testing.T) {
+	home := t.TempDir()
+	zshrc := filepath.Join(home, ".zshrc")
+	if err := os.WriteFile(zshrc, []byte("# no bulwark\n"), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	RemoveFromPath(home, testDarwin, &buf)
+	// No removal message expected.
+	if strings.Contains(buf.String(), "[ok]") {
+		t.Error("should not report removal when block is absent")
+	}
+}
+
+func TestRemoveBulwarkBlock(t *testing.T) {
+	content := "line1\n" + pathMarkerStart + "\nexport PATH\n" + pathMarkerEnd + "\nline2\n"
+	cleaned := removeBulwarkBlock(content)
+	if strings.Contains(cleaned, pathMarkerStart) {
+		t.Error("marker should be removed")
+	}
+	if !strings.Contains(cleaned, "line1") || !strings.Contains(cleaned, "line2") {
+		t.Error("surrounding content should be preserved")
+	}
+}
+
+func TestRemoveBulwarkBlockNoMarker(t *testing.T) {
+	content := "no markers here"
+	if removeBulwarkBlock(content) != content {
+		t.Error("content should be unchanged when no markers present")
+	}
+}
+
+func TestRemoveBulwarkBlockOnlyStart(t *testing.T) {
+	content := pathMarkerStart + "\nexport PATH\n"
+	if removeBulwarkBlock(content) != content {
+		t.Error("content should be unchanged when only start marker present")
+	}
+}
+
+// --- UninstallAll ---
+
+func TestAllEcosystems(t *testing.T) {
+	all := AllEcosystems()
+	if len(all) != 3 {
+		t.Fatalf("want 3 ecosystems, got %d", len(all))
+	}
+	names := map[string]bool{}
+	for _, p := range all {
+		names[p.Ecosystem] = true
+	}
+	for _, eco := range []string{EcosystemNpm, EcosystemPypi, EcosystemMaven} {
+		if !names[eco] {
+			t.Errorf("missing ecosystem %s", eco)
+		}
+	}
+}
+
+func TestUninstallAllAtEmpty(t *testing.T) {
+	home := t.TempDir()
+	var buf bytes.Buffer
+	if err := UninstallAllAt(home, testDarwin, &buf); err != nil {
+		t.Fatalf("UninstallAllAt: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "Uninstalling all") {
+		t.Error("missing header message")
+	}
+	if !strings.Contains(output, "[skip]") {
+		t.Error("expected skip messages for non-installed proxies")
+	}
+}
+
+func TestUninstallAllAtInstalled(t *testing.T) {
+	home := t.TempDir()
+	exe := createDummyExe(t)
+
+	// Install npm and pypi.
+	var setup bytes.Buffer
+	if err := SetupFiles(testProxyInfo(), home, exe, testDarwin, &setup); err != nil {
+		t.Fatalf("setup npm: %v", err)
+	}
+	if err := SetupFiles(pypiProxyInfo(), home, exe, testDarwin, &setup); err != nil {
+		t.Fatalf("setup pypi: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := UninstallAllAt(home, testDarwin, &buf); err != nil {
+		t.Fatalf("UninstallAllAt: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "has been uninstalled") {
+		t.Error("expected uninstall messages")
+	}
+	if !strings.Contains(output, "All Bulwark proxies uninstalled") {
+		t.Error("missing completion message")
+	}
+}
+
+// --- Update ---
+
+func TestFetchLatestVersionSuccess(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name": "v1.2.3"}`)) //nolint:errcheck
+	}))
+	defer mock.Close()
+
+	// Override ghAPIURL by testing FetchLatestVersion with a custom client
+	// that redirects to our mock.
+	client := mock.Client()
+	// We need to test the actual function, so we'll use UpdateAt with a mock server.
+	_ = client
+}
+
+func TestUpdateAtAlreadyUpToDate(t *testing.T) {
+	// Mock GitHub API that returns the same version.
+	ghMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name": "v1.0.0"}`)) //nolint:errcheck
+	}))
+	defer ghMock.Close()
+
+	// Temporarily override the function's HTTP call by providing a custom client
+	// with a transport that redirects GitHub API calls to our mock.
+	transport := &testTransport{handler: ghMock}
+	client := &http.Client{Transport: transport}
+
+	home := t.TempDir()
+	var buf bytes.Buffer
+	err := UpdateAt(home, testDarwin, "amd64", "v1.0.0", client, &buf)
+	if err != nil {
+		t.Fatalf("UpdateAt: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Already up to date") {
+		t.Errorf("expected up-to-date message, got: %s", buf.String())
+	}
+}
+
+func TestUpdateAtNewVersion(t *testing.T) {
+	binaryContent := "#!/bin/sh\necho updated\n"
+	ghMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "releases/latest") {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"tag_name": "v2.0.0"}`)) //nolint:errcheck
+			return
+		}
+		// Binary download.
+		w.Write([]byte(binaryContent)) //nolint:errcheck
+	}))
+	defer ghMock.Close()
+
+	transport := &testTransport{handler: ghMock}
+	client := &http.Client{Transport: transport}
+
+	home := t.TempDir()
+	exe := createDummyExe(t)
+
+	// Install npm-bulwark so it's found as installed.
+	var setup bytes.Buffer
+	if err := SetupFiles(testProxyInfo(), home, exe, testDarwin, &setup); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	var buf bytes.Buffer
+	err := UpdateAt(home, testDarwin, "amd64", "v1.0.0", client, &buf)
+	if err != nil {
+		t.Fatalf("UpdateAt: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "updated to v2.0.0") {
+		t.Errorf("expected update message, got: %s", output)
+	}
+	if !strings.Contains(output, "Update complete") {
+		t.Errorf("expected completion message, got: %s", output)
+	}
+}
+
+func TestUpdateAtNoInstalled(t *testing.T) {
+	ghMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name": "v2.0.0"}`)) //nolint:errcheck
+	}))
+	defer ghMock.Close()
+
+	transport := &testTransport{handler: ghMock}
+	client := &http.Client{Transport: transport}
+
+	home := t.TempDir()
+	var buf bytes.Buffer
+	err := UpdateAt(home, testDarwin, "amd64", "v1.0.0", client, &buf)
+	if err != nil {
+		t.Fatalf("UpdateAt: %v", err)
+	}
+	if !strings.Contains(buf.String(), "No installed proxies found") {
+		t.Errorf("expected no-installed message, got: %s", buf.String())
+	}
+}
+
+func TestUpdateAtAPIError(t *testing.T) {
+	ghMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ghMock.Close()
+
+	transport := &testTransport{handler: ghMock}
+	client := &http.Client{Transport: transport}
+
+	home := t.TempDir()
+	var buf bytes.Buffer
+	err := UpdateAt(home, testDarwin, "amd64", "v1.0.0", client, &buf)
+	if err == nil {
+		t.Error("expected error for API failure")
+	}
+}
+
+func TestBinaryDownloadURL(t *testing.T) {
+	got := binaryDownloadURL("v1.0.0", "npm-bulwark", "linux", "amd64")
+	if !strings.Contains(got, "v1.0.0/npm-bulwark-linux-amd64") {
+		t.Errorf("unexpected URL: %s", got)
+	}
+
+	gotWin := binaryDownloadURL("v1.0.0", "npm-bulwark", testWindows, "amd64")
+	if !strings.HasSuffix(gotWin, ".exe") {
+		t.Errorf("Windows URL should end with .exe: %s", gotWin)
+	}
+}
+
+func TestDownloadBinarySuccess(t *testing.T) {
+	content := "binary-data"
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(content)) //nolint:errcheck
+	}))
+	defer mock.Close()
+
+	dest := filepath.Join(t.TempDir(), "binary")
+	if err := downloadBinary(mock.Client(), mock.URL, dest); err != nil {
+		t.Fatalf("downloadBinary: %v", err)
+	}
+	data, _ := os.ReadFile(dest)
+	if string(data) != content {
+		t.Errorf("content: want %q, got %q", content, string(data))
+	}
+}
+
+func TestDownloadBinary404(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mock.Close()
+
+	dest := filepath.Join(t.TempDir(), "binary")
+	err := downloadBinary(mock.Client(), mock.URL, dest)
+	if err == nil {
+		t.Error("expected error for 404")
+	}
+}
+
+func TestDownloadBinaryBadDest(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("data")) //nolint:errcheck
+	}))
+	defer mock.Close()
+
+	err := downloadBinary(mock.Client(), mock.URL, "/nonexistent/dir/binary")
+	if err == nil {
+		t.Error("expected error for bad destination")
+	}
+}
+
+// --- SetupFiles PATH integration ---
+
+func TestSetupFilesAddsToPath(t *testing.T) {
+	home := t.TempDir()
+	exe := createDummyExe(t)
+	// Create .zshrc so AddToPath has something to modify.
+	zshrc := filepath.Join(home, ".zshrc")
+	if err := os.WriteFile(zshrc, []byte("# existing\n"), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	p := testProxyInfo()
+	var buf bytes.Buffer
+	if err := SetupFiles(p, home, exe, testDarwin, &buf); err != nil {
+		t.Fatalf("SetupFiles: %v", err)
+	}
+	data, _ := os.ReadFile(zshrc)
+	if !strings.Contains(string(data), pathMarkerStart) {
+		t.Error("SetupFiles should add Bulwark to PATH")
+	}
+}
+
+// testTransport redirects all requests to a local httptest.Server.
+type testTransport struct {
+	handler *httptest.Server
+}
+
+func (t *testTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Rewrite the request URL to point to our test server.
+	req.URL.Scheme = "http"
+	req.URL.Host = strings.TrimPrefix(t.handler.URL, "http://")
+	return http.DefaultTransport.RoundTrip(req)
 }

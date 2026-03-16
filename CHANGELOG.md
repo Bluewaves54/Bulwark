@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-03-15
+
+### Added
+
+- **Universal explicit logging levels**: configurable `log_level` (debug, info, warn, error) and `log_format` (text, json) in config YAML for all three proxies, with runtime validation and `BULWARK_LOG_LEVEL` environment variable override.
+- **Global uninstall command**: `-uninstall-all` CLI flag removes all installed Bulwark proxies (pypi-bulwark, npm-bulwark, maven-bulwark), their configurations, autostart entries, and PATH entries in a single operation.
+- **Self-update command**: `-update` CLI flag checks the latest stable release on GitHub, downloads the new binary, and replaces the running executable in-place.
+- **Automatic PATH management**: the installer now adds `~/.bulwark/bin` to the system PATH (via shell profile on Unix, user environment on Windows) during setup and removes it on uninstall.
+- Per-proxy logging behavior tests covering level filtering, JSON format output, file output, dynamic log-level API, `parseLogLevel`, and environment variable overrides for all three ecosystems.
+
 ## [0.1.1] — 2026-03-14
 
 ### Improved

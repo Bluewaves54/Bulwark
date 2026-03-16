@@ -25,3 +25,5 @@ e2e/docker/start-adhoc-and-test.cmd
 
 # Internal development docs (not for public repo)
 product.md
+
+ANALYSIS_REPORT.md

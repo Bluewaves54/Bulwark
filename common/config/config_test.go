@@ -300,3 +300,159 @@ func TestFailModeInvalid(t *testing.T) {
 		t.Fatal("expected error for invalid fail_mode")
 	}
 }
+
+// --- Logging validation ---
+
+func TestLogLevelInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://pypi.org\"\nlogging:\n  level: \"verbose\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected validation error for invalid logging.level")
+	}
+}
+
+func TestLogFormatInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://pypi.org\"\nlogging:\n  format: \"xml\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected validation error for invalid logging.format")
+	}
+}
+
+func TestLogLevelAllValid(t *testing.T) {
+	for _, lvl := range []string{"debug", "info", "warn", "error"} {
+		if !config.ValidLogLevel(lvl) {
+			t.Errorf("ValidLogLevel(%q) = false, want true", lvl)
+		}
+	}
+}
+
+func TestLogFormatAllValid(t *testing.T) {
+	for _, fmt := range []string{"text", "json"} {
+		if !config.ValidLogFormat(fmt) {
+			t.Errorf("ValidLogFormat(%q) = false, want true", fmt)
+		}
+	}
+}
+
+func TestLogLevelInvalidValues(t *testing.T) {
+	for _, lvl := range []string{"verbose", "trace", "WARN", "ERROR", ""} {
+		if config.ValidLogLevel(lvl) {
+			t.Errorf("ValidLogLevel(%q) = true, want false", lvl)
+		}
+	}
+}
+
+func TestLogFormatInvalidValues(t *testing.T) {
+	for _, fmt := range []string{"xml", "csv", "TEXT", ""} {
+		if config.ValidLogFormat(fmt) {
+			t.Errorf("ValidLogFormat(%q) = true, want false", fmt)
+		}
+	}
+}
+
+func TestEnvOverrideLogLevel(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("upstream:\n  url: \"https://pypi.org\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BULWARK_LOG_LEVEL", "debug")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("env log level override: want debug, got %q", cfg.Logging.Level)
+	}
+}
+
+func TestEnvOverrideLogLevelInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("upstream:\n  url: \"https://pypi.org\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BULWARK_LOG_LEVEL", "verbose")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Logging.Level != "info" {
+		t.Errorf("invalid env log level should keep default, got %q", cfg.Logging.Level)
+	}
+}
+
+func TestEnvOverrideLogLevelCaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("upstream:\n  url: \"https://pypi.org\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BULWARK_LOG_LEVEL", "WARN")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Logging.Level != "warn" {
+		t.Errorf("env log level override: want warn, got %q", cfg.Logging.Level)
+	}
+}
+
+func TestLogLevelExplicitDebug(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://pypi.org\"\nlogging:\n  level: \"debug\"\n  format: \"json\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("logging.level: want debug, got %q", cfg.Logging.Level)
+	}
+	if cfg.Logging.Format != "json" {
+		t.Errorf("logging.format: want json, got %q", cfg.Logging.Format)
+	}
+}
+
+func TestLogLevelExplicitError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://pypi.org\"\nlogging:\n  level: \"error\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Logging.Level != "error" {
+		t.Errorf("logging.level: want error, got %q", cfg.Logging.Level)
+	}
+}
+
+func TestVersionPatternActionInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://pypi.org\"\npolicy:\n  version_patterns:\n    - name: \"test\"\n      match: \".*\"\n      action: \"block\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected validation error for invalid version_pattern action")
+	}
+}

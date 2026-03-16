@@ -85,7 +85,7 @@ C4Component
   title Component Diagram — pypi-bulwark binary
 
   Container_Boundary(pypi, "pypi-bulwark") {
-    Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -background, -config), auto-detects first run and performs setup if needed, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM. The -background flag re-executes the binary as a detached process.")
+    Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -uninstall-all, -update, -background, -config), auto-detects first run and performs setup if needed, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM. The -background flag re-executes the binary as a detached process. The -uninstall-all flag removes all ecosystem proxies. The -update flag self-updates to the latest GitHub release.")
     Component(server, "server.go — Server", "Go struct", "Registers HTTP routes on ServeMux. Holds references to config, HTTP client, cache, metrics, rule engine, logger.")
     Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handlePackageJSON, handleExternal, handleHealth, handleReady, handleMetrics, handleGetLogLevel, handleSetLogLevel. Each handler follows the filter pipeline.")
     Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with [Bulwark] reason). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with [Bulwark] reason. 7. Rewrite and return filtered response.")
@@ -446,6 +446,8 @@ sequenceDiagram
     Note over proxy: All subsequent log entries now include DEBUG level.
     Note over ops: To apply config file changes, restart the proxy process\nor use the -background flag to re-launch.
 ```
+
+> **Environment variable override**: Set `BULWARK_LOG_LEVEL` to override the YAML `logging.level` at startup. Useful in containers and CI pipelines where editing config files is inconvenient.
 
 ---
 
@@ -809,6 +811,7 @@ flowchart TD
     E --> F["Create ~/.bulwark/<ecosystem>/"]
     E --> G["Write config.yaml\n(embedded best-practices)"]
     E --> H["Copy binary to\n~/.bulwark/bin/"]
+    E --> HA["AddToPath()\n~/.bulwark/bin → shell profile"]
     E --> I["writePkgMgrConfig()"]
     E --> J["writeAutostartFile()"]
     I --> K{"Ecosystem?"}
@@ -855,6 +858,9 @@ flowchart TD
 
 - **`//go:embed`** for config: the binary is self-contained; no need to download config separately.
 - **First-run auto-setup**: `resolveConfig()` detects missing config and calls `installer.SetupFilesOnly()` (writes files but does not activate launchd/systemd, since the running process itself serves as the proxy).
+- **PATH management**: `AddToPath()` appends `~/.bulwark/bin` to the user's shell profile (`.zshrc`, `.bashrc`, or `.profile` on Unix; user `Path` environment variable on Windows). `RemoveFromPath()` reverses this on uninstall. Idempotent — repeated setups do not create duplicate entries.
+- **`-uninstall-all`**: calls `installer.UninstallAll()` which iterates over all three ecosystems performing a full `Uninstall()` for each, then removes `~/.bulwark/` entirely.
+- **`-update`**: calls `installer.Update()` which queries the GitHub Releases API for the latest stable version, downloads the matching binary, and replaces the running executable.
 - **`run()` function**: the proxy lifecycle (`handleInstallMode → resolveConfig → initServer → runServer`) is extracted from `main()` into a testable `run()` function that returns an error instead of calling `os.Exit`.
 - **`-background` flag**: re-executes the binary as a detached child process (via `installer.Daemonize`). On Unix, uses `Setsid` to create a new session; on Windows, uses `CREATE_NEW_PROCESS_GROUP`. Output is logged to `~/.bulwark/<binary>/daemon.log`. Without this flag, the proxy runs in the foreground.
 - **`goos` parameter** on all file-system functions: enables cross-platform unit testing without mocking `runtime.GOOS`.

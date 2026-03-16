@@ -6,8 +6,10 @@
 package installer
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -314,6 +316,7 @@ func SetupFiles(p ProxyInfo, home, exePath, goos string, out io.Writer) error {
 
 	writePkgMgrConfig(p, home, goos, out)
 	writeAutostartFile(p, paths, home, goos, out)
+	AddToPath(home, goos, out)
 	PrintPostSetup(p, paths, out)
 	return nil
 }
@@ -487,7 +490,11 @@ func Uninstall(p ProxyInfo, out io.Writer) error {
 	}
 	goos := runtime.GOOS
 	DeactivateServices(p, home, goos, out)
-	return UninstallFiles(p, home, goos, out)
+	if err := UninstallFiles(p, home, goos, out); err != nil {
+		return err
+	}
+	RemoveFromPath(home, goos, out)
+	return nil
 }
 
 // PrintPostSetup prints instructions after a successful setup.
@@ -542,5 +549,327 @@ func SetupFilesOnlyAt(p ProxyInfo, home, exe, goos string, out io.Writer) error 
 	if p.Ecosystem == EcosystemNpm {
 		activateNpm(p.Port, out)
 	}
+	return nil
+}
+
+// --- PATH management ---
+
+const (
+	pathMarkerStart = "# >>> Bulwark PATH >>>"
+	pathMarkerEnd   = "# <<< Bulwark PATH <<<"
+	pathExportLine  = "export PATH=\"$HOME/.bulwark/bin:$PATH\""
+)
+
+// shellProfiles returns the shell profile files to modify for the given OS.
+func shellProfiles(home, goos string) []string {
+	switch goos {
+	case OSDarwin:
+		return []string{
+			filepath.Join(home, ".zshrc"),
+			filepath.Join(home, ".bash_profile"),
+		}
+	case OSLinux:
+		return []string{
+			filepath.Join(home, ".bashrc"),
+			filepath.Join(home, ".zshrc"),
+			filepath.Join(home, ".profile"),
+		}
+	default:
+		return nil
+	}
+}
+
+// PathBlock returns the text block added to shell profiles.
+func PathBlock() string {
+	return pathMarkerStart + "\n" + pathExportLine + "\n" + pathMarkerEnd + "\n"
+}
+
+// AddToPath adds ~/.bulwark/bin to the user's shell profile PATH.
+// On Windows it uses setx. On macOS/Linux it appends to shell profiles.
+func AddToPath(home, goos string, out io.Writer) {
+	if goos == OSWindows {
+		addToPathWindows(home, out)
+		return
+	}
+
+	block := PathBlock()
+	profiles := shellProfiles(home, goos)
+	added := false
+	for _, profile := range profiles {
+		data, err := os.ReadFile(profile)
+		if err != nil {
+			continue // file does not exist, skip
+		}
+		if strings.Contains(string(data), pathMarkerStart) {
+			continue // already present
+		}
+		if err := os.WriteFile(profile, append(data, []byte("\n"+block)...), cfgPerm); err != nil {
+			fmt.Fprintf(out, "[warn] could not update %s: %v\n", profile, err)
+			continue
+		}
+		fmt.Fprintf(out, "[ok] Added ~/.bulwark/bin to PATH in %s\n", profile)
+		added = true
+	}
+
+	if !added {
+		// No existing profile found; create .profile as fallback.
+		fallback := filepath.Join(home, ".profile")
+		if err := os.WriteFile(fallback, []byte(block), cfgPerm); err != nil {
+			fmt.Fprintf(out, "[warn] could not create %s: %v\n", fallback, err)
+			return
+		}
+		fmt.Fprintf(out, "[ok] Created %s with Bulwark PATH\n", fallback)
+	}
+
+	fmt.Fprintf(out, "[info] Restart your shell or run: source <profile> to update PATH\n")
+}
+
+func addToPathWindows(home string, out io.Writer) {
+	binDir := filepath.Join(home, bulwarkDir, binSubdir)
+	cmd := exec.Command("setx", "PATH", "%PATH%;"+binDir) //nolint:gosec // user-initiated
+	if _, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(out, "[info] Could not update PATH automatically. Add this to your PATH:\n")
+		fmt.Fprintf(out, "       %s\n", binDir)
+		return
+	}
+	fmt.Fprintf(out, "[ok] Added %s to user PATH\n", binDir)
+}
+
+// RemoveFromPath removes the Bulwark PATH block from shell profiles.
+func RemoveFromPath(home, goos string, out io.Writer) {
+	if goos == OSWindows {
+		fmt.Fprintf(out, "[info] Remove %s from your PATH manually if desired\n",
+			filepath.Join(home, bulwarkDir, binSubdir))
+		return
+	}
+
+	profiles := shellProfiles(home, goos)
+	// Also check .profile in case it was the fallback.
+	profiles = append(profiles, filepath.Join(home, ".profile"))
+	seen := map[string]bool{}
+	for _, profile := range profiles {
+		if seen[profile] {
+			continue
+		}
+		seen[profile] = true
+		data, err := os.ReadFile(profile)
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		if !strings.Contains(content, pathMarkerStart) {
+			continue
+		}
+		cleaned := removeBulwarkBlock(content)
+		if err := os.WriteFile(profile, []byte(cleaned), cfgPerm); err != nil {
+			fmt.Fprintf(out, "[warn] could not update %s: %v\n", profile, err)
+			continue
+		}
+		fmt.Fprintf(out, "[ok] Removed Bulwark PATH from %s\n", profile)
+	}
+}
+
+// removeBulwarkBlock removes the marker-delimited block from content.
+func removeBulwarkBlock(content string) string {
+	start := strings.Index(content, pathMarkerStart)
+	if start == -1 {
+		return content
+	}
+	end := strings.Index(content, pathMarkerEnd)
+	if end == -1 {
+		return content
+	}
+	end += len(pathMarkerEnd)
+	// Remove trailing newline after end marker if present.
+	if end < len(content) && content[end] == '\n' {
+		end++
+	}
+	// Remove leading newline before start marker if present.
+	if start > 0 && content[start-1] == '\n' {
+		start--
+	}
+	return content[:start] + content[end:]
+}
+
+// --- Global uninstall ---
+
+// AllEcosystems returns ProxyInfo for all three supported ecosystems.
+func AllEcosystems() []ProxyInfo {
+	return []ProxyInfo{
+		{Ecosystem: EcosystemNpm, BinaryName: "npm-bulwark", Port: 18001},
+		{Ecosystem: EcosystemPypi, BinaryName: "pypi-bulwark", Port: 18000},
+		{Ecosystem: EcosystemMaven, BinaryName: "maven-bulwark", Port: 18002},
+	}
+}
+
+// UninstallAll stops services, removes files, and restores package manager
+// configs for all three ecosystems, then removes the shared ~/.bulwark directory.
+func UninstallAll(out io.Writer) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("finding home directory: %w", err)
+	}
+	return UninstallAllAt(home, runtime.GOOS, out)
+}
+
+// UninstallAllAt is the testable implementation of UninstallAll.
+func UninstallAllAt(home, goos string, out io.Writer) error {
+	fmt.Fprintf(out, "=== Uninstalling all Bulwark proxies ===\n\n")
+	for _, p := range AllEcosystems() {
+		if !IsInstalledAt(p, home, goos) {
+			fmt.Fprintf(out, "[skip] %s-bulwark is not installed\n", p.Ecosystem)
+			continue
+		}
+		DeactivateServices(p, home, goos, out)
+		if err := UninstallFiles(p, home, goos, out); err != nil {
+			fmt.Fprintf(out, "[warn] %s uninstall error: %v\n", p.Ecosystem, err)
+		}
+		fmt.Fprintln(out)
+	}
+
+	RemoveFromPath(home, goos, out)
+
+	// Remove shared directories if empty.
+	binDir := filepath.Join(home, bulwarkDir, binSubdir)
+	os.Remove(binDir) //nolint:errcheck // may not be empty
+	baseDir := filepath.Join(home, bulwarkDir)
+	os.Remove(baseDir) //nolint:errcheck // may not be empty
+
+	fmt.Fprintf(out, "\n=== All Bulwark proxies uninstalled ===\n")
+	return nil
+}
+
+// --- Update command ---
+
+const (
+	// ghRepo is the GitHub owner/repo path used for update checks.
+	ghRepo = "Bluewaves54/Bulwark"
+	// ghAPIURL is the GitHub releases API endpoint.
+	ghAPIURL = "https://api.github.com/repos/" + ghRepo + "/releases/latest"
+)
+
+// ghRelease is the minimal GitHub release JSON structure we need.
+type ghRelease struct {
+	TagName string `json:"tag_name"`
+}
+
+// FetchLatestVersion queries the GitHub API for the latest release tag.
+func FetchLatestVersion(client *http.Client) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, ghAPIURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetching latest release: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+
+	var rel ghRelease
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return "", fmt.Errorf("decoding release JSON: %w", err)
+	}
+	if rel.TagName == "" {
+		return "", fmt.Errorf("no tag_name in release response")
+	}
+	return rel.TagName, nil
+}
+
+// binaryDownloadURL builds the download URL for a given proxy binary.
+func binaryDownloadURL(version, binaryName, goos, goarch string) string {
+	name := binaryName + "-" + goos + "-" + goarch
+	if goos == OSWindows {
+		name += ".exe"
+	}
+	return "https://github.com/" + ghRepo + "/releases/download/" + version + "/" + name
+}
+
+// downloadBinary downloads a binary from url into destPath.
+func downloadBinary(client *http.Client, url, destPath string) error {
+	resp, err := client.Get(url) //nolint:noctx // short-lived CLI operation
+	if err != nil {
+		return fmt.Errorf("downloading binary: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download returned %d for %s", resp.StatusCode, url)
+	}
+
+	f, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, binPerm)
+	if err != nil {
+		return fmt.Errorf("creating file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("writing binary: %w", err)
+	}
+	return nil
+}
+
+// Update downloads the latest release binaries for all installed ecosystems.
+func Update(currentVersion string, out io.Writer) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("finding home directory: %w", err)
+	}
+	return UpdateAt(home, runtime.GOOS, runtime.GOARCH, currentVersion, &http.Client{}, out)
+}
+
+// UpdateAt is the testable implementation of Update.
+func UpdateAt(home, goos, goarch, currentVersion string, client *http.Client, out io.Writer) error {
+	fmt.Fprintf(out, "=== Bulwark Update ===\n\n")
+	fmt.Fprintf(out, "Current version: %s\n", currentVersion)
+	fmt.Fprintf(out, "Checking for latest release...\n")
+
+	latest, err := FetchLatestVersion(client)
+	if err != nil {
+		return fmt.Errorf("checking latest version: %w", err)
+	}
+	fmt.Fprintf(out, "Latest version:  %s\n\n", latest)
+
+	if latest == currentVersion {
+		fmt.Fprintf(out, "Already up to date.\n")
+		return nil
+	}
+
+	updated := false
+	for _, p := range AllEcosystems() {
+		if !IsInstalledAt(p, home, goos) {
+			continue
+		}
+		paths := ResolvePaths(p, home, goos)
+		url := binaryDownloadURL(latest, p.BinaryName, goos, goarch)
+		fmt.Fprintf(out, "Updating %s ...\n", p.BinaryName)
+
+		tmpPath := paths.Binary + ".tmp"
+		if err := downloadBinary(client, url, tmpPath); err != nil {
+			fmt.Fprintf(out, "[warn] %s update failed: %v\n", p.BinaryName, err)
+			os.Remove(tmpPath) //nolint:errcheck // cleanup
+			continue
+		}
+
+		if err := os.Rename(tmpPath, paths.Binary); err != nil {
+			fmt.Fprintf(out, "[warn] %s replace failed: %v\n", p.BinaryName, err)
+			os.Remove(tmpPath) //nolint:errcheck // cleanup
+			continue
+		}
+		fmt.Fprintf(out, "[ok] %s updated to %s\n", p.BinaryName, latest)
+		updated = true
+	}
+
+	if !updated {
+		fmt.Fprintf(out, "No installed proxies found to update.\n")
+		return nil
+	}
+
+	fmt.Fprintf(out, "\n=== Update complete ===\n")
+	fmt.Fprintf(out, "Restart running proxies to use the new version.\n")
 	return nil
 }

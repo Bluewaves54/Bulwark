@@ -194,6 +194,7 @@ Windows — install only maven:
 3. Writes the best-practices config to `~/.bulwark/<ecosystem>-bulwark/config.yaml`.
 4. Configures your package manager (npm registry, pip index-url, Maven mirror).
 5. Creates an autostart entry (macOS LaunchAgent, Linux systemd user service, Windows Startup batch).
+6. Adds `~/.bulwark/bin` to your system PATH (appends to shell profile on Unix, updates user environment on Windows).
 
 **After installation — reconfiguring rules:**
 
@@ -224,9 +225,18 @@ systemctl --user restart bulwark-npm.service
 **Uninstalling:**
 
 ```bash
+# Uninstall a single ecosystem:
 ~/.bulwark/bin/npm-bulwark -uninstall
-~/.bulwark/bin/pypi-bulwark -uninstall
-~/.bulwark/bin/maven-bulwark -uninstall
+
+# Uninstall ALL ecosystems at once (removes configs, autostart entries, and PATH):
+~/.bulwark/bin/npm-bulwark -uninstall-all
+```
+
+**Self-updating:**
+
+```bash
+# Update to the latest stable release:
+~/.bulwark/bin/npm-bulwark -update
 ```
 
 The uninstall command restores your original package manager configuration (npm registry, Maven settings.xml backup).
@@ -410,6 +420,7 @@ policy:
 | Variable               | Description                      |
 |------------------------|----------------------------------|
 | `PORT`                 | Override `server.port`           |
+| `BULWARK_LOG_LEVEL`    | Override `logging.level` (debug/info/warn/error) |
 | `BULWARK_AUTH_TOKEN`   | Bearer token for upstream auth   |
 | `BULWARK_AUTH_USERNAME`| Basic-auth username              |
 | `BULWARK_AUTH_PASSWORD`| Basic-auth password              |
@@ -501,6 +512,8 @@ All three proxy binaries (`npm-bulwark`, `pypi-bulwark`, `maven-bulwark`) accept
 |------|-------------|
 | `-setup` | Install Bulwark with best-practices config and configure the package manager |
 | `-uninstall` | Remove Bulwark and restore the original package manager configuration |
+| `-uninstall-all` | Remove all installed Bulwark proxies, their configs, autostart entries, and PATH entries |
+| `-update` | Check for the latest stable release on GitHub and update the binary in-place |
 | `-background` | Start the proxy as a detached background process (no terminal needed). Prints the PID and exits. Output logged to `~/.bulwark/<binary>/daemon.log` |
 | `-config <path>` | Path to configuration file (default: `config.yaml`) |
 | `-auth-token <token>` | Upstream auth bearer token (overrides config) |

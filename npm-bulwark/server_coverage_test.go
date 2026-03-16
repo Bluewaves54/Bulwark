@@ -33,9 +33,10 @@ func (r *roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const (
-	testNpmToken    = "npm-token-xyz"
-	testNpmUser     = "npm-user"
-	testNpmPassword = "npm-password"
+	testNpmToken      = "npm-token-xyz"
+	testNpmUser       = "npm-user"
+	testNpmPassword   = "npm-password"
+	testConfigPattern = "config-*.yaml"
 )
 
 // ─── Utility functions ────────────────────────────────────────────────────────
@@ -955,7 +956,7 @@ func TestHandleInstallModeError(t *testing.T) {
 func TestRunBadConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := run(ctx, "/no/such/config.yaml", true, false, false, false, "", "", "", io.Discard)
+	err := run(ctx, "/no/such/config.yaml", true, false, false, false, false, false, "", "", "", io.Discard)
 	if err == nil {
 		t.Error("expected error for missing config")
 	}
@@ -970,7 +971,7 @@ func TestRunNormalStartup(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := run(ctx, cfgFile, true, false, false, false, "", "", "", io.Discard)
+	err := run(ctx, cfgFile, true, false, false, false, false, false, "", "", "", io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1273,5 +1274,183 @@ func TestFilterNpmPackumentPackageBlocked(t *testing.T) {
 	}
 	if !strings.Contains(string(filtered), `"versions":{}`) {
 		t.Error("expected empty versions in response")
+	}
+}
+
+// ─── Explicit logging level behavior tests (npm) ─────────────────────────────
+
+func TestLoggingLevelDebugBehaviorNpm(t *testing.T) {
+	logger, lvl, _ := createLogger("text", "debug", "")
+	if lvl.Level() != slog.LevelDebug {
+		t.Errorf("want LevelDebug, got %v", lvl.Level())
+	}
+	if !logger.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("debug messages should be enabled at debug level")
+	}
+}
+
+func TestLoggingLevelInfoBehaviorNpm(t *testing.T) {
+	logger, lvl, _ := createLogger("text", "info", "")
+	if lvl.Level() != slog.LevelInfo {
+		t.Errorf("want LevelInfo, got %v", lvl.Level())
+	}
+	if logger.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("debug messages should NOT be enabled at info level")
+	}
+	if !logger.Enabled(context.Background(), slog.LevelInfo) {
+		t.Error("info messages should be enabled at info level")
+	}
+}
+
+func TestLoggingLevelWarnBehaviorNpm(t *testing.T) {
+	logger, lvl, _ := createLogger("text", "warn", "")
+	if lvl.Level() != slog.LevelWarn {
+		t.Errorf("want LevelWarn, got %v", lvl.Level())
+	}
+	if logger.Enabled(context.Background(), slog.LevelInfo) {
+		t.Error("info messages should NOT be enabled at warn level")
+	}
+	if !logger.Enabled(context.Background(), slog.LevelWarn) {
+		t.Error("warn messages should be enabled at warn level")
+	}
+}
+
+func TestLoggingLevelErrorBehaviorNpm(t *testing.T) {
+	logger, lvl, _ := createLogger("text", "error", "")
+	if lvl.Level() != slog.LevelError {
+		t.Errorf("want LevelError, got %v", lvl.Level())
+	}
+	if logger.Enabled(context.Background(), slog.LevelWarn) {
+		t.Error("warn messages should NOT be enabled at error level")
+	}
+	if !logger.Enabled(context.Background(), slog.LevelError) {
+		t.Error("error messages should be enabled at error level")
+	}
+}
+
+func TestLoggingJSONFormatBehaviorNpm(t *testing.T) {
+	logger, _, _ := createLogger("json", "info", "")
+	if logger == nil {
+		t.Error("expected non-nil logger for json format")
+	}
+}
+
+func TestLoggingFileOutputNpm(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "test.log")
+	logger, _, logFile := createLogger("text", "info", tmpFile)
+	if logFile == nil {
+		t.Fatal("expected non-nil log file")
+	}
+	defer logFile.Close()
+	logger.Info("test message")
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "test message") {
+		t.Error("log file should contain test message")
+	}
+}
+
+func TestDynamicLogLevelAPINpm(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mock.Close()
+
+	ts := buildTestServer(t, mock.URL, config.PolicyConfig{})
+
+	// GET initial level.
+	resp, err := http.Get(ts.url + "/admin/log-level")
+	if err != nil {
+		t.Fatalf("GET log-level: %v", err)
+	}
+	var body map[string]string
+	json.NewDecoder(resp.Body).Decode(&body) //nolint:errcheck
+	resp.Body.Close()
+	if body["level"] == "" {
+		t.Error("expected non-empty level")
+	}
+
+	// PUT change to debug.
+	req, _ := http.NewRequest(http.MethodPut, ts.url+"/admin/log-level",
+		strings.NewReader(`{"level":"debug"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT log-level: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Errorf("PUT log-level: want 200, got %d", resp2.StatusCode)
+	}
+
+	// Verify level changed.
+	resp3, _ := http.Get(ts.url + "/admin/log-level")
+	var body3 map[string]string
+	json.NewDecoder(resp3.Body).Decode(&body3) //nolint:errcheck
+	resp3.Body.Close()
+	if body3["level"] != "debug" {
+		t.Errorf("level after PUT: want debug, got %q", body3["level"])
+	}
+
+	// PUT invalid level.
+	reqBad, _ := http.NewRequest(http.MethodPut, ts.url+"/admin/log-level",
+		strings.NewReader(`{"level":"verbose"}`))
+	reqBad.Header.Set("Content-Type", "application/json")
+	resp4, _ := http.DefaultClient.Do(reqBad)
+	resp4.Body.Close()
+	if resp4.StatusCode != http.StatusBadRequest {
+		t.Errorf("PUT invalid level: want 400, got %d", resp4.StatusCode)
+	}
+}
+
+func TestParseLogLevelNpm(t *testing.T) {
+	tests := []struct {
+		input string
+		want  slog.Level
+		ok    bool
+	}{
+		{"debug", slog.LevelDebug, true},
+		{"info", slog.LevelInfo, true},
+		{"warn", slog.LevelWarn, true},
+		{"error", slog.LevelError, true},
+		{"DEBUG", slog.LevelDebug, true},
+		{"verbose", slog.LevelInfo, false},
+	}
+	for _, tc := range tests {
+		got, ok := parseLogLevel(tc.input)
+		if ok != tc.ok {
+			t.Errorf("parseLogLevel(%q): ok = %v, want %v", tc.input, ok, tc.ok)
+		}
+		if got != tc.want {
+			t.Errorf("parseLogLevel(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestLoggingEnvOverrideNpm(t *testing.T) {
+	yaml := `
+upstream:
+  url: "https://registry.npmjs.org"
+server:
+  port: 9000
+`
+	f, err := os.CreateTemp(t.TempDir(), testConfigPattern)
+	if err != nil {
+		t.Fatalf(testErrTempDir, err)
+	}
+	if _, err = f.WriteString(yaml); err != nil {
+		t.Fatalf(testErrWriteString, err)
+	}
+	f.Close()
+
+	t.Setenv("BULWARK_LOG_LEVEL", "debug")
+	srv, _, _, err := initServer(f.Name(), "", "", "")
+	if err != nil {
+		t.Fatalf(testErrInitServer, err)
+	}
+	if srv.logLevel.Level() != slog.LevelDebug {
+		t.Errorf("env override: want LevelDebug, got %v", srv.logLevel.Level())
 	}
 }
