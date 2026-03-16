@@ -6,6 +6,7 @@
 package installer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const (
@@ -368,6 +370,9 @@ func UninstallFiles(p ProxyInfo, home, goos string, out io.Writer) error {
 
 // --- External command helpers (not unit-tested; documented exemption from coverage) ---
 
+// cmdTimeout is the max time allowed for external commands (systemctl, launchctl, npm).
+const cmdTimeout = 10 * time.Second
+
 func activateNpm(port int, out io.Writer) {
 	url := fmt.Sprintf("http://localhost:%d/", port)
 	if _, err := exec.LookPath("npm"); err != nil {
@@ -375,7 +380,9 @@ func activateNpm(port int, out io.Writer) {
 		fmt.Fprintf(out, "       npm config set registry %s\n", url)
 		return
 	}
-	cmd := exec.Command("npm", "config", "set", "registry", url) //nolint:gosec // user-initiated setup
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "npm", "config", "set", "registry", url) //nolint:gosec // user-initiated setup
 	if output, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(out, "[warn] npm config: %s (%v)\n", strings.TrimSpace(string(output)), err)
 		return
@@ -384,8 +391,10 @@ func activateNpm(port int, out io.Writer) {
 }
 
 func activateLaunchd(plistPath string, out io.Writer) {
-	exec.Command("launchctl", "unload", plistPath).Run() //nolint:errcheck,gosec // best-effort unload before reload
-	cmd := exec.Command("launchctl", "load", plistPath)  //nolint:gosec // user-initiated
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run() //nolint:errcheck,gosec // best-effort unload before reload
+	cmd := exec.CommandContext(ctx, "launchctl", "load", plistPath)  //nolint:gosec // user-initiated
 	if _, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(out, "[warn] launchctl load failed; start manually\n")
 		return
@@ -394,8 +403,10 @@ func activateLaunchd(plistPath string, out io.Writer) {
 }
 
 func activateSystemd(unitName string, out io.Writer) {
-	exec.Command("systemctl", "--user", "daemon-reload").Run()              //nolint:errcheck,gosec // best-effort
-	cmd := exec.Command("systemctl", "--user", "enable", "--now", unitName) //nolint:gosec // user-initiated
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	exec.CommandContext(ctx, "systemctl", "--user", "daemon-reload").Run()              //nolint:errcheck,gosec // best-effort
+	cmd := exec.CommandContext(ctx, "systemctl", "--user", "enable", "--now", unitName) //nolint:gosec // user-initiated
 	if _, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(out, "[warn] systemctl enable failed; start manually\n")
 		return
@@ -407,18 +418,24 @@ func deactivateNpm(out io.Writer) {
 	if _, err := exec.LookPath("npm"); err != nil {
 		return
 	}
-	exec.Command("npm", "config", "delete", "registry").Run() //nolint:errcheck,gosec // best-effort
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	exec.CommandContext(ctx, "npm", "config", "delete", "registry").Run() //nolint:errcheck,gosec // best-effort
 	fmt.Fprintf(out, "[ok] npm registry restored to default\n")
 }
 
 func deactivateLaunchd(plistPath string, out io.Writer) {
-	exec.Command("launchctl", "unload", plistPath).Run() //nolint:errcheck,gosec // best-effort
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run() //nolint:errcheck,gosec // best-effort
 	fmt.Fprintf(out, "[ok] LaunchAgent unloaded\n")
 }
 
 func deactivateSystemd(unitName string, out io.Writer) {
-	exec.Command("systemctl", "--user", "disable", "--now", unitName).Run() //nolint:errcheck,gosec // best-effort
-	exec.Command("systemctl", "--user", "daemon-reload").Run()              //nolint:errcheck,gosec // best-effort
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	exec.CommandContext(ctx, "systemctl", "--user", "disable", "--now", unitName).Run() //nolint:errcheck,gosec // best-effort
+	exec.CommandContext(ctx, "systemctl", "--user", "daemon-reload").Run()              //nolint:errcheck,gosec // best-effort
 	fmt.Fprintf(out, "[ok] systemd service disabled\n")
 }
 
