@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -608,7 +610,23 @@ func TestHandleSimplePackageLevelDeny(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("package deny: want 403, got %d", resp.StatusCode)
 	}
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+
+	// Response must be valid HTML with block reason visible.
+	if ct := resp.Header.Get(hdrContentType); ct != "text/html; charset=utf-8" {
+		t.Errorf("blocked content-type: want text/html, got %s", ct)
+	}
+	if !strings.Contains(string(body), "[Bulwark]") {
+		t.Error("blocked HTML body must contain [Bulwark] marker")
+	}
+	if !strings.Contains(string(body), testPkg) {
+		t.Error("blocked HTML body must contain the package name")
+	}
+	// X-Bulwark-Blocked header must be present.
+	if bh := resp.Header.Get(hdrBulwarkBlocked); bh == "" {
+		t.Error("expected X-Bulwark-Blocked header on blocked response")
+	}
 	// Stats counter for denied should have incremented.
 	if ts.srv.reqDenied.Load() == 0 {
 		t.Error("expected reqDenied counter to increment for package-level deny")
@@ -1887,5 +1905,229 @@ server:
 	}
 	if srv.logLevel.Level() != slog.LevelDebug {
 		t.Errorf("env override: want LevelDebug, got %v", srv.logLevel.Level())
+	}
+}
+
+func TestIsAddrInUsePyPI(t *testing.T) {
+	if isAddrInUse(nil) {
+		t.Error("nil error should not be address-in-use")
+	}
+	if isAddrInUse(fmt.Errorf("connection refused")) {
+		t.Error("unrelated error should not match")
+	}
+	if !isAddrInUse(fmt.Errorf("listen tcp :8080: bind: address already in use")) {
+		t.Error("address-in-use error should match")
+	}
+}
+
+func TestKillProcessOnPortNoProcessPyPI(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(59999, logger)
+}
+
+func TestKillProcessOnPortUnsupportedOSPyPI(t *testing.T) {
+	old := hostOS
+	hostOS = "plan9"
+	defer func() { hostOS = old }()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(12345, logger)
+}
+
+func TestKillProcessOnPortOwnProcessPyPI(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(port, logger)
+}
+
+func TestKillProcessOnPortForeignProcessPyPI(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	script := fmt.Sprintf(
+		"import socket,time;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"+
+			"s.bind(('127.0.0.1',%d));s.listen(1);time.sleep(60)", port)
+	cmd := exec.Command("python3", "-c", script)
+	if err := cmd.Start(); err != nil {
+		t.Skip("python3 not available")
+	}
+	defer cmd.Process.Kill() //nolint:errcheck // best-effort cleanup
+	time.Sleep(300 * time.Millisecond)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(port, logger)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+		// Process was killed — success.
+	case <-time.After(3 * time.Second):
+		t.Error("expected subprocess to be killed within timeout")
+	}
+}
+
+func TestRunServerPortConflictPyPI(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	srv := &Server{
+		cfg: &config.Config{
+			Server: config.ServerConfig{
+				Port:                port,
+				ReadTimeoutSeconds:  5,
+				WriteTimeoutSeconds: 5,
+				IdleTimeoutSeconds:  30,
+			},
+		},
+		mux:      http.NewServeMux(),
+		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		logLevel: &slog.LevelVar{},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if runErr := runServer(ctx, srv, srv.logger, "pypi-bulwark-test"); runErr == nil {
+		t.Error("expected error when port is occupied, got nil")
+	}
+}
+
+func TestListenWithRetrySucceedsImmediately(t *testing.T) {
+	ln, err := listenWithRetry(":0", 3, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	ln.Close()
+}
+
+func TestListenWithRetryFailsAfterMaxAttempts(t *testing.T) {
+	// Occupy a port.
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	addr := ln.Addr().String()
+
+	_, err = listenWithRetry(addr, 2, 10*time.Millisecond)
+	if err == nil {
+		t.Error("expected error when port is occupied")
+	}
+}
+
+// ─── Blocked response format tests ───────────────────────────────────────────
+
+func TestHandleSimpleBlockedJSONFormat(t *testing.T) {
+	mockBody := mockPyPIJSONResponse(map[string]string{
+		"1.0.0": testTimeOld2020,
+	})
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(hdrContentType, mimeJSON)
+		w.Write(mockBody) //nolint:errcheck
+	}))
+	defer mock.Close()
+
+	policy := config.PolicyConfig{
+		Rules: []config.PackageRule{
+			{Name: "denial", PackagePatterns: []string{testPkg}, Action: "deny"},
+		},
+	}
+	ts := buildTestServer(t, mock.URL, policy)
+
+	req, _ := http.NewRequest(http.MethodGet, ts.url+testPathSimpleCov+testPkg+"/", nil)
+	req.Header.Set("Accept", ctPyPISimpleJSON)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("package deny JSON: want 403, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get(hdrContentType); ct != ctPyPISimpleJSON {
+		t.Errorf("blocked JSON content-type: want %s, got %s", ctPyPISimpleJSON, ct)
+	}
+	if bh := resp.Header.Get(hdrBulwarkBlocked); bh == "" {
+		t.Error("expected X-Bulwark-Blocked header on blocked JSON response")
+	}
+	body, _ := io.ReadAll(resp.Body)
+	var parsed struct {
+		Meta    map[string]string `json:"meta"`
+		Name    string            `json:"name"`
+		Files   []interface{}     `json:"files"`
+		Blocked string            `json:"blocked"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("blocked JSON body is not valid JSON: %v", err)
+	}
+	if len(parsed.Files) != 0 {
+		t.Error("blocked JSON should have zero files")
+	}
+	if parsed.Blocked == "" {
+		t.Error("blocked JSON should contain a non-empty blocked field")
+	}
+	if parsed.Name != testPkg {
+		t.Errorf("blocked JSON name: want %s, got %s", testPkg, parsed.Name)
+	}
+}
+
+func TestBuildBlockedHTMLIndex(t *testing.T) {
+	body, ct := buildBlockedHTMLIndex("numpy", "explicit_deny")
+	if ct != "text/html; charset=utf-8" {
+		t.Errorf("want text/html, got %s", ct)
+	}
+	s := string(body)
+	if !strings.Contains(s, "[Bulwark] numpy: explicit_deny") {
+		t.Error("HTML must contain block reason")
+	}
+	if !strings.Contains(s, "<title>Links for numpy</title>") {
+		t.Error("HTML must contain PEP 503 title")
+	}
+	if strings.Contains(s, "<a href=") {
+		t.Error("blocked HTML must not contain download links")
+	}
+}
+
+func TestBuildBlockedJSONIndex(t *testing.T) {
+	body, ct := buildBlockedJSONIndex("numpy", "explicit_deny")
+	if ct != ctPyPISimpleJSON {
+		t.Errorf("want %s, got %s", ctPyPISimpleJSON, ct)
+	}
+	var parsed struct {
+		Meta    map[string]string `json:"meta"`
+		Name    string            `json:"name"`
+		Files   []interface{}     `json:"files"`
+		Blocked string            `json:"blocked"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	if parsed.Name != "numpy" {
+		t.Errorf("name: want numpy, got %s", parsed.Name)
+	}
+	if parsed.Blocked != "explicit_deny" {
+		t.Errorf("blocked: want explicit_deny, got %s", parsed.Blocked)
+	}
+	if len(parsed.Files) != 0 {
+		t.Error("files must be empty")
+	}
+	if v := parsed.Meta["api-version"]; v != "1.0" {
+		t.Errorf("api-version: want 1.0, got %s", v)
 	}
 }

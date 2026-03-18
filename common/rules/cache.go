@@ -14,6 +14,7 @@ type CacheEntry struct {
 	Body        []byte
 	ContentType string
 	StatusCode  int
+	BlockReason string
 	StoredAt    time.Time
 }
 

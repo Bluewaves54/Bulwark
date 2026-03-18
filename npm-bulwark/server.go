@@ -6,11 +6,16 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -26,6 +31,11 @@ const (
 	levelError = "error"
 	formatJSON = "json"
 )
+
+var hostOS = runtime.GOOS
+
+// reclaimGrace is the time to wait after SIGINT before escalating to SIGKILL.
+const reclaimGrace = 1 * time.Second
 
 // Server holds all runtime state for the npm Bulwark.
 type Server struct {
@@ -187,18 +197,30 @@ func initServer(cfgPath, token, user, pass string) (*Server, *slog.Logger, *os.F
 // runServer starts the HTTP server and blocks until ctx is cancelled, then
 // performs a graceful shutdown. serviceName is used only for the startup log line.
 func runServer(ctx context.Context, srv *Server, logger *slog.Logger, serviceName string) error {
+	addr := addrFromPort(srv.cfg.Server.Port)
 	httpSrv := &http.Server{
-		Addr:         addrFromPort(srv.cfg.Server.Port),
 		Handler:      srv.mux,
 		ReadTimeout:  time.Duration(srv.cfg.Server.ReadTimeoutSeconds) * time.Second,
 		WriteTimeout: time.Duration(srv.cfg.Server.WriteTimeoutSeconds) * time.Second,
 		IdleTimeout:  time.Duration(srv.cfg.Server.IdleTimeoutSeconds) * time.Second,
 	}
 
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		if isAddrInUse(err) {
+			logger.Warn("port in use, attempting to reclaim", slog.String("addr", addr))
+			killProcessOnPort(srv.cfg.Server.Port, logger)
+			ln, err = listenWithRetry(addr, 5, 500*time.Millisecond)
+		}
+		if err != nil {
+			return fmt.Errorf("listen on %s: %w", addr, err)
+		}
+	}
+
 	go func() {
-		logger.Info(serviceName+" listening", slog.String("addr", httpSrv.Addr))
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("listen error", slog.String("error", err.Error()))
+		logger.Info(serviceName+" listening", slog.String("addr", addr))
+		if serveErr := httpSrv.Serve(ln); serveErr != nil && serveErr != http.ErrServerClosed {
+			logger.Error("serve error", slog.String("error", serveErr.Error()))
 		}
 	}()
 
@@ -210,4 +232,72 @@ func runServer(ctx context.Context, srv *Server, logger *slog.Logger, serviceNam
 
 	logger.Info("shutting down")
 	return httpSrv.Shutdown(shutCtx)
+}
+
+// isAddrInUse reports whether err is an "address already in use" error.
+func isAddrInUse(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "address already in use")
+}
+
+// killProcessOnPort finds and terminates the process occupying the given TCP port.
+func killProcessOnPort(port int, logger *slog.Logger) {
+	var cmd *exec.Cmd
+	portStr := strconv.Itoa(port)
+
+	switch hostOS {
+	case "darwin", "linux":
+		cmd = exec.Command("lsof", "-ti", ":"+portStr) //nolint:gosec // port is an integer
+	default:
+		logger.Warn("automatic port reclaim not supported on this OS; kill the old process manually",
+			slog.Int("port", port))
+		return
+	}
+
+	out, err := cmd.Output()
+	if err != nil {
+		logger.Warn("could not find process on port", slog.Int("port", port))
+		return
+	}
+
+	myPID := os.Getpid()
+	for _, line := range strings.Fields(strings.TrimSpace(string(out))) {
+		pid, convErr := strconv.Atoi(line)
+		if convErr != nil || pid == myPID || pid == 0 {
+			continue
+		}
+		proc, findErr := os.FindProcess(pid)
+		if findErr != nil {
+			continue
+		}
+		logger.Info("killing old process on port", slog.Int("port", port), slog.Int("pid", pid))
+		if killErr := proc.Signal(os.Interrupt); killErr != nil {
+			if errors.Is(killErr, os.ErrProcessDone) {
+				continue
+			}
+			_ = proc.Kill()
+			continue
+		}
+		// Wait briefly for graceful exit, then force-kill if still alive.
+		time.Sleep(reclaimGrace)
+		if killErr := proc.Signal(os.Kill); killErr == nil {
+			logger.Info("force-killed old process", slog.Int("pid", pid))
+		}
+	}
+}
+
+// listenWithRetry attempts net.Listen up to maxAttempts times with the given
+// delay between attempts. It returns the listener on success or the last error.
+func listenWithRetry(addr string, maxAttempts int, delay time.Duration) (net.Listener, error) {
+	var ln net.Listener
+	var err error
+	for i := range maxAttempts {
+		ln, err = net.Listen("tcp", addr)
+		if err == nil {
+			return ln, nil
+		}
+		if i < maxAttempts-1 {
+			time.Sleep(delay)
+		}
+	}
+	return nil, err
 }

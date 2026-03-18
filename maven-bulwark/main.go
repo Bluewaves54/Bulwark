@@ -111,6 +111,8 @@ func run(ctx context.Context, cfgPath string, configExplicit, setupMode, uninsta
 		return fmt.Errorf("config resolution: %w", err)
 	}
 
+	installer.EnsurePkgMgrConfig(proxy, home, runtime.GOOS, out)
+
 	srv, logger, logFile, err := initServer(effectiveCfg, authToken, authUser, authPass)
 	if err != nil {
 		return fmt.Errorf("initialisation: %w", err)

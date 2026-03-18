@@ -37,11 +37,11 @@ policy:
   fail_mode: "closed" # Block uninspected artifacts
 
   trusted_packages:
+    - "numpy"
     - "pip"
     - "setuptools"
     - "wheel"
     - "build"
-    - "numpy"
     - "scipy"
     - "pandas"
     - "django"

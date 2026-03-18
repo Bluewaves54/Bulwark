@@ -88,8 +88,8 @@ C4Component
     Component(main, "main.go", "Go package main", "Entry point. Parses flags (-setup, -uninstall, -uninstall-all, -update, -background, -config), auto-detects first run and performs setup if needed, loads config, creates logger, builds server, starts HTTP server, handles graceful shutdown on SIGINT/SIGTERM. The -background flag re-executes the binary as a detached process. The -uninstall-all flag removes all ecosystem proxies. The -update flag self-updates to the latest GitHub release.")
     Component(server, "server.go — Server", "Go struct", "Registers HTTP routes on ServeMux. Holds references to config, HTTP client, cache, metrics, rule engine, logger.")
     Component(handlers, "server.go — Handlers", "Go methods on Server", "handleSimple, handlePackageJSON, handleExternal, handleHealth, handleReady, handleMetrics, handleGetLogLevel, handleSetLogLevel. Each handler follows the filter pipeline.")
-    Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with [Bulwark] reason). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with [Bulwark] reason. 7. Rewrite and return filtered response.")
-    Component(pypi_helpers, "pypi.go", "Go package", "normalizePyPIName, extractPkgVersionFromFilename, filterVersions, filterPyPIJSONResponse, evaluateExternalURL, PEP 691 JSON parsing, HTML simple index building.")
+    Component(pipeline, "Filtering Pipeline", "Logic within handlers", "1. Parse request. 2. Check package rules (deny → 403 with [Bulwark] reason + X-Bulwark-Blocked header). 3. Cache lookup. 4. Fetch upstream. 5. Evaluate each version. 6. If all versions blocked → 403 with format-aware body (PEP 503 HTML / PEP 691 JSON for PyPI) + X-Bulwark-Blocked header. 7. Rewrite and return filtered response.")
+    Component(pypi_helpers, "pypi.go", "Go package", "normalizePyPIName, extractPkgVersionFromFilename, filterVersions, filterPyPIJSONResponse, evaluateExternalURL, PEP 691 JSON parsing, HTML simple index building, buildBlockedHTMLIndex, buildBlockedJSONIndex.")
     Component(config_loader, "config.go (common/config)", "Go package", "LoadConfig, applyDefaults, validate. Shared across all ecosystems. AllowedExternalHosts for PyPI.")
     Component(metrics, "Metrics", "atomic.Int64 counters", "reqTotal, reqAllowed, reqDenied, reqDryRun.")
   }
@@ -247,15 +247,15 @@ stateDiagram-v2
 
 ### Block Response Behaviour
 
-When a package is entirely blocked — either by a package-level deny rule or because every individual version was removed by version-level rules — the proxy returns **HTTP 403 Forbidden** with a clear `[Bulwark]` policy reason in the response body instead of an empty version list.
+When a package is entirely blocked — either by a package-level deny rule or because every individual version was removed by version-level rules — the proxy returns **HTTP 403 Forbidden** with a clear `[Bulwark]` policy reason instead of an empty version list. All blocked responses include an `X-Bulwark-Blocked` response header containing the block reason.
 
 **Package-level / all-versions-removed blocks (metadata endpoints):**
 
-| Ecosystem | Response Format | Example Body |
-|---|---|---|
-| **npm** | JSON `{"error":"..."}` | `{"error":"[Bulwark] event-stream: package matches deny list"}` |
-| **PyPI** | Plain text | `[Bulwark] requests: all available versions blocked by policy` |
-| **Maven** | Plain text (via `http.Error`) | `[Bulwark] com.example:mylib: all available versions blocked by policy` |
+| Ecosystem | Response Format | Example Body | `X-Bulwark-Blocked` Header |
+|---|---|---|---|
+| **npm** | JSON `{"error":"..."}` | `{"error":"[Bulwark] event-stream: package matches deny list"}` | `package matches deny list` |
+| **PyPI** | PEP 503 HTML or PEP 691 JSON (content-negotiated) | HTML: `<h1>[Bulwark] requests: explicit_deny</h1>` | `explicit_deny` |
+| **Maven** | Plain text (via `http.Error`) | `[Bulwark] com.example:mylib: all available versions blocked by policy` | — |
 
 **Direct download blocks (tarball / artifact / external URL):**
 
@@ -267,11 +267,11 @@ When a package is entirely blocked — either by a package-level deny rule or be
 | **Maven** | artifact `/.../1.0-RC1/lib.jar` | `[Bulwark] com/example:mylib@1.0-RC1: pre-release version blocked` |
 | **Maven** | artifact (package-level) | `[Bulwark] com/example:mylib: package matches deny list` |
 
-This ensures package managers display a meaningful error message (e.g., npm shows the `error` field) instead of confusing messages like `ENOVERSIONS` (npm) or "No matching distribution found" (pip).
+This ensures package managers display a meaningful error message (e.g., npm shows the `error` field) instead of confusing messages like `ENOVERSIONS` (npm) or "No matching distribution found" (pip). PyPI blocked responses use content negotiation: if the client sends `Accept: application/vnd.pypi.simple.v1+json`, the response is a valid PEP 691 JSON object with an empty `files` array and a `blocked` field; otherwise, the response is a valid PEP 503 HTML page with the block reason in an `<h1>` tag and zero download links.
 
 When only *some* versions are blocked, the proxy still returns a **200 OK** with the filtered response and an `X-Curation-Policy-Notice` header indicating how many versions were removed.
 
-**Cached 403 responses** are stored in the in-memory cache with the same TTL as normal responses, so repeated requests for blocked packages are served from cache.
+**Cached 403 responses** are stored in the in-memory cache with the same TTL as normal responses, so repeated requests for blocked packages are served from cache. The `BlockReason` field in `CacheEntry` preserves the block reason across cache hits, ensuring the `X-Bulwark-Blocked` header is emitted on every response.
 
 ---
 
@@ -422,7 +422,7 @@ sequenceDiagram
     Note over engine: distance ≤ MaxEditDistance (2)
     engine-->>proxy: {Allowed: false, Rule: "typosquatting",\nReason: "name too similar to protected package 'requests'"}
 
-    proxy-->>pip: 403 Forbidden\n[Bulwark] reqvests: name too similar to protected package 'requests'
+    proxy-->>pip: 403 Forbidden (PEP 503 HTML / PEP 691 JSON)\nX-Bulwark-Blocked: name too similar to protected package 'requests'\n<h1>[Bulwark] reqvests: name too similar to protected package 'requests'</h1>
 ```
 
 ---

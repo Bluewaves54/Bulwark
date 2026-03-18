@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1142,6 +1143,22 @@ func TestRunNormalStartup(t *testing.T) {
 	}
 }
 
+func TestRunWithLogFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "test.log")
+	cfgFile := filepath.Join(tmpDir, "config.yaml")
+	cfgData := fmt.Sprintf("server:\n  port: 0\nupstream:\n  url: http://localhost:19999\n  timeout_seconds: 1\ncache:\n  ttl_seconds: 1\nlogging:\n  file_path: %s\n", logPath)
+	if err := os.WriteFile(cfgFile, []byte(cfgData), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := run(ctx, cfgFile, true, false, false, false, false, false, "", "", "", io.Discard)
+	if err != nil {
+		t.Fatalf(testErrUnexpected, err)
+	}
+}
+
 // --- resolveConfig tests ---
 
 func TestResolveConfigExplicit(t *testing.T) {
@@ -1702,7 +1719,7 @@ server:
 }
 
 func TestRunServerPortConflict(t *testing.T) {
-	// Occupy a port so runServer fails on ListenAndServe.
+	// Occupy a port so runServer sees "address already in use".
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatal(err)
@@ -1725,13 +1742,100 @@ func TestRunServerPortConflict(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	// Give the goroutine time to hit the listen error, then cancel.
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		cancel()
-	}()
+	defer cancel()
 
-	// runServer will fail on ListenAndServe due to port conflict,
-	// then block on ctx.Done() and return.
-	_ = runServer(ctx, srv, srv.logger, "maven-bulwark-test")
+	if runErr := runServer(ctx, srv, srv.logger, "maven-bulwark-test"); runErr == nil {
+		t.Error("expected error when port is occupied, got nil")
+	}
+}
+
+func TestIsAddrInUseMaven(t *testing.T) {
+	if isAddrInUse(nil) {
+		t.Error("nil error should not be address-in-use")
+	}
+	if isAddrInUse(fmt.Errorf("connection refused")) {
+		t.Error("unrelated error should not match")
+	}
+	if !isAddrInUse(fmt.Errorf("listen tcp :8080: bind: address already in use")) {
+		t.Error("address-in-use error should match")
+	}
+}
+
+func TestKillProcessOnPortNoProcessMaven(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(59999, logger)
+}
+
+func TestKillProcessOnPortUnsupportedOSMaven(t *testing.T) {
+	old := hostOS
+	hostOS = "plan9"
+	defer func() { hostOS = old }()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(12345, logger)
+}
+
+func TestKillProcessOnPortOwnProcessMaven(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(port, logger)
+}
+
+func TestKillProcessOnPortForeignProcessMaven(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	script := fmt.Sprintf(
+		"import socket,time;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"+
+			"s.bind(('127.0.0.1',%d));s.listen(1);time.sleep(60)", port)
+	cmd := exec.Command("python3", "-c", script)
+	if err := cmd.Start(); err != nil {
+		t.Skip("python3 not available")
+	}
+	defer cmd.Process.Kill() //nolint:errcheck // best-effort cleanup
+	time.Sleep(300 * time.Millisecond)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(port, logger)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+		// Process was killed — success.
+	case <-time.After(3 * time.Second):
+		t.Error("expected subprocess to be killed within timeout")
+	}
+}
+
+func TestListenWithRetrySucceedsImmediatelyMaven(t *testing.T) {
+	ln, err := listenWithRetry(":0", 3, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	ln.Close()
+}
+
+func TestListenWithRetryFailsAfterMaxAttemptsMaven(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	addr := ln.Addr().String()
+
+	_, err = listenWithRetry(addr, 2, 10*time.Millisecond)
+	if err == nil {
+		t.Error("expected error when port is occupied")
+	}
 }

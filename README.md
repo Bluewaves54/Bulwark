@@ -108,7 +108,7 @@ When a package request arrives:
    - **Regex patterns?** Block versions matching custom patterns (e.g., anything with "rc" or "dev").
    - **Pinned approved?** Bypass age/other checks if you've explicitly approved the exact version.
 
-3. **Response rewriting:** Remove blocked versions from the response. When *some* versions pass policy, the filtered response is returned normally. When a package is entirely blocked (package-level deny or all versions removed), Bulwark returns **HTTP 403** with a `[Bulwark] package: reason` message so your package manager displays a meaningful error instead of a confusing "no versions found" message. Direct download blocks (tarballs, artifacts) include the same structured message with the specific version and rule reason.
+3. **Response rewriting:** Remove blocked versions from the response. When *some* versions pass policy, the filtered response is returned normally. When a package is entirely blocked (package-level deny or all versions removed), Bulwark returns **HTTP 403** with an `X-Bulwark-Blocked` response header containing the block reason. PyPI blocked responses are content-negotiated: a valid PEP 503 HTML page (with the reason in `<h1>`) or PEP 691 JSON (with a `blocked` field and empty `files` array), so pip sees an empty index and curl/browsers display the reason clearly. npm returns a JSON error object and Maven returns plain text. Direct download blocks (tarballs, artifacts) include the same structured `[Bulwark] package: reason` message with the specific version and rule reason.
 
 4. **Caching:** Cache filtered responses in memory (configurable TTL) so repeated requests don't hit the upstream registry repeatedly.
 

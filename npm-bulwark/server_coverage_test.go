@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1452,5 +1454,126 @@ server:
 	}
 	if srv.logLevel.Level() != slog.LevelDebug {
 		t.Errorf("env override: want LevelDebug, got %v", srv.logLevel.Level())
+	}
+}
+
+func TestIsAddrInUseNpm(t *testing.T) {
+	if isAddrInUse(nil) {
+		t.Error("nil error should not be address-in-use")
+	}
+	if isAddrInUse(fmt.Errorf("connection refused")) {
+		t.Error("unrelated error should not match")
+	}
+	if !isAddrInUse(fmt.Errorf("listen tcp :8080: bind: address already in use")) {
+		t.Error("address-in-use error should match")
+	}
+}
+
+func TestKillProcessOnPortNoProcessNpm(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(59999, logger)
+}
+
+func TestKillProcessOnPortUnsupportedOSNpm(t *testing.T) {
+	old := hostOS
+	hostOS = "plan9"
+	defer func() { hostOS = old }()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(12345, logger)
+}
+
+func TestKillProcessOnPortOwnProcessNpm(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(port, logger)
+}
+
+func TestKillProcessOnPortForeignProcessNpm(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	script := fmt.Sprintf(
+		"import socket,time;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"+
+			"s.bind(('127.0.0.1',%d));s.listen(1);time.sleep(60)", port)
+	cmd := exec.Command("python3", "-c", script)
+	if err := cmd.Start(); err != nil {
+		t.Skip("python3 not available")
+	}
+	defer cmd.Process.Kill() //nolint:errcheck // best-effort cleanup
+	time.Sleep(300 * time.Millisecond)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	killProcessOnPort(port, logger)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+		// Process was killed — success.
+	case <-time.After(3 * time.Second):
+		t.Error("expected subprocess to be killed within timeout")
+	}
+}
+
+func TestRunServerPortConflictNpm(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	srv := &Server{
+		cfg: &config.Config{
+			Server: config.ServerConfig{
+				Port:                port,
+				ReadTimeoutSeconds:  5,
+				WriteTimeoutSeconds: 5,
+				IdleTimeoutSeconds:  30,
+			},
+		},
+		mux:      http.NewServeMux(),
+		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		logLevel: &slog.LevelVar{},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if runErr := runServer(ctx, srv, srv.logger, "npm-bulwark-test"); runErr == nil {
+		t.Error("expected error when port is occupied, got nil")
+	}
+}
+
+func TestListenWithRetrySucceedsImmediatelyNpm(t *testing.T) {
+	ln, err := listenWithRetry(":0", 3, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	ln.Close()
+}
+
+func TestListenWithRetryFailsAfterMaxAttemptsNpm(t *testing.T) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	addr := ln.Addr().String()
+
+	_, err = listenWithRetry(addr, 2, 10*time.Millisecond)
+	if err == nil {
+		t.Error("expected error when port is occupied")
 	}
 }

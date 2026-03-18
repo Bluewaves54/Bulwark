@@ -28,6 +28,7 @@ const (
 	hdrContentType    = "Content-Type"
 	mimeJSON          = "application/json"
 	hdrXCache         = "X-Cache"
+	hdrBulwarkBlocked = "X-Bulwark-Blocked"
 	errMsgUpstream    = "upstream error"
 	pypiTimeFmt       = "2006-01-02T15:04:05"
 	blockReasonAllVer = "all available versions blocked by policy"
@@ -82,6 +83,9 @@ func (s *Server) handleSimple(w http.ResponseWriter, r *http.Request) {
 	if entry := s.cache.Get(cacheKey); entry != nil {
 		w.Header().Set(hdrContentType, entry.ContentType)
 		w.Header().Set(hdrXCache, "HIT")
+		if entry.BlockReason != "" {
+			w.Header().Set(hdrBulwarkBlocked, entry.BlockReason)
+		}
 		w.WriteHeader(entry.StatusCode)
 		w.Write(entry.Body) //nolint:errcheck
 		return
@@ -101,19 +105,29 @@ func (s *Server) handleSimple(w http.ResponseWriter, r *http.Request) {
 	s.reqAllowed.Add(int64(len(allowed)))
 	s.reqDenied.Add(int64(len(denied)))
 
-	// When the entire package is blocked, return 403 with the policy reason.
+	format := preferredFormat(r)
+
+	// When the entire package is blocked, return 403 with a valid index page
+	// that contains the block reason. This ensures pip parses the response
+	// (seeing zero links) and tools like curl/browsers see the reason.
 	if blockReason != "" {
-		errBody := fmt.Sprintf("[Bulwark] %s: %s", pkg, blockReason)
-		entry := &rules.CacheEntry{Body: []byte(errBody), ContentType: "text/plain", StatusCode: http.StatusForbidden}
+		var body []byte
+		var ct string
+		if format == formatJSON {
+			body, ct = buildBlockedJSONIndex(pkg, blockReason)
+		} else {
+			body, ct = buildBlockedHTMLIndex(pkg, blockReason)
+		}
+		entry := &rules.CacheEntry{Body: body, ContentType: ct, StatusCode: http.StatusForbidden, BlockReason: blockReason}
 		s.cache.Set(cacheKey, entry)
-		w.Header().Set(hdrContentType, "text/plain")
+		w.Header().Set(hdrContentType, ct)
 		w.Header().Set(hdrXCache, "MISS")
+		w.Header().Set(hdrBulwarkBlocked, blockReason)
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(errBody)) //nolint:errcheck
+		w.Write(body) //nolint:errcheck
 		return
 	}
 
-	format := preferredFormat(r)
 	var body []byte
 	var ct string
 
@@ -201,6 +215,7 @@ func (s *Server) handlePackageJSON(w http.ResponseWriter, r *http.Request) {
 		s.cache.Set(cacheKey, entry)
 		w.Header().Set(hdrContentType, "text/plain")
 		w.Header().Set(hdrXCache, "MISS")
+		w.Header().Set(hdrBulwarkBlocked, blockReason)
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte(errBody)) //nolint:errcheck
 		return
@@ -663,6 +678,45 @@ func buildJSONSimpleIndex(pkg string, meta *pypiMeta, allowed []string) ([]byte,
 	if err != nil {
 		// Fallback to empty valid response.
 		b = []byte(`{"meta":{"api-version":"1.0"},"name":"` + pkg + `","files":[]}`)
+	}
+	return b, ctPyPISimpleJSON
+}
+
+// buildBlockedHTMLIndex returns a valid PEP 503 HTML simple index with zero
+// download links and the block reason displayed prominently. pip will parse
+// the HTML, find no links, and report "no matching distribution". curl and
+// browsers will render the reason clearly.
+func buildBlockedHTMLIndex(pkg, reason string) ([]byte, string) {
+	var sb strings.Builder
+	sb.WriteString("<!DOCTYPE html>\n<html><head><title>Links for ")
+	sb.WriteString(pkg)
+	sb.WriteString("</title></head>\n<body>\n<h1>[Bulwark] ")
+	sb.WriteString(pkg)
+	sb.WriteString(": ")
+	sb.WriteString(reason)
+	sb.WriteString("</h1>\n</body></html>\n")
+	return []byte(sb.String()), "text/html; charset=utf-8"
+}
+
+// buildBlockedJSONIndex returns a valid PEP 691 JSON simple index with zero
+// download links and the block reason in a "blocked" field. pip will parse
+// the JSON, find no files, and report "no matching distribution".
+func buildBlockedJSONIndex(pkg, reason string) ([]byte, string) {
+	type blockedJSON struct {
+		Meta    map[string]string `json:"meta"`
+		Name    string            `json:"name"`
+		Files   []struct{}        `json:"files"`
+		Blocked string            `json:"blocked"`
+	}
+	resp := blockedJSON{
+		Meta:    map[string]string{"api-version": "1.0"},
+		Name:    pkg,
+		Files:   []struct{}{},
+		Blocked: reason,
+	}
+	b, err := json.Marshal(resp)
+	if err != nil {
+		b = []byte(`{"meta":{"api-version":"1.0"},"name":"` + pkg + `","files":[],"blocked":"` + reason + `"}`)
 	}
 	return b, ctPyPISimpleJSON
 }

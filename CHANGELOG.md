@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-03-17
+
+### Changed
+
+- **PyPI format-aware blocked responses**: `pypi-bulwark` now returns content-negotiated PEP 503 HTML or PEP 691 JSON for blocked packages instead of plain text. HTML responses display the block reason in an `<h1>` tag; JSON responses include a `blocked` field with an empty `files` array. This ensures curl, browsers, and API clients see a clear block reason.
+- **`X-Bulwark-Blocked` response header**: all blocked PyPI package responses (both `/simple/{pkg}/` and `/pypi/{pkg}/json`) now include an `X-Bulwark-Blocked` header with the block reason, preserved across cache hits via a new `BlockReason` field on `CacheEntry`.
+
 ## [0.1.2] — 2026-03-15
 
 ### Added

@@ -1044,6 +1044,107 @@ func TestWritePkgMgrConfigNpm(t *testing.T) {
 	}
 }
 
+// --- EnsurePkgMgrConfig ---
+
+func TestEnsurePkgMgrConfigPypiCreates(t *testing.T) {
+	home := t.TempDir()
+	p := pypiProxyInfo()
+	var buf bytes.Buffer
+	EnsurePkgMgrConfig(p, home, testDarwin, &buf)
+	if !strings.Contains(buf.String(), "[ok] pip index configured") {
+		t.Errorf("expected pip config message, got: %s", buf.String())
+	}
+	_, cfgFile := PipConfigPaths(home, testDarwin)
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("pip config not found: %v", err)
+	}
+	if !strings.Contains(string(data), "index-url") {
+		t.Error("pip config missing index-url")
+	}
+}
+
+func TestEnsurePkgMgrConfigPypiSkips(t *testing.T) {
+	home := t.TempDir()
+	p := pypiProxyInfo()
+	cfgDir, cfgFile := PipConfigPaths(home, testDarwin)
+	if err := os.MkdirAll(cfgDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgFile, []byte(PipConfig(p.Port)), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	EnsurePkgMgrConfig(p, home, testDarwin, &buf)
+	if buf.String() != "" {
+		t.Errorf("expected no output when config already correct, got: %s", buf.String())
+	}
+}
+
+func TestEnsurePkgMgrConfigPypiStale(t *testing.T) {
+	home := t.TempDir()
+	p := pypiProxyInfo()
+	cfgDir, cfgFile := PipConfigPaths(home, testDarwin)
+	if err := os.MkdirAll(cfgDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgFile, []byte(PipConfig(99999)), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	EnsurePkgMgrConfig(p, home, testDarwin, &buf)
+	if !strings.Contains(buf.String(), "[ok] pip index configured") {
+		t.Errorf("expected pip config updated message, got: %s", buf.String())
+	}
+	data, _ := os.ReadFile(cfgFile)
+	if !strings.Contains(string(data), "localhost:18000") {
+		t.Error("pip config not updated with correct port")
+	}
+}
+
+func TestEnsurePkgMgrConfigMavenCreates(t *testing.T) {
+	home := t.TempDir()
+	p := mavenProxyInfo()
+	var buf bytes.Buffer
+	EnsurePkgMgrConfig(p, home, testDarwin, &buf)
+	if !strings.Contains(buf.String(), "[ok] Maven mirror configured") {
+		t.Errorf("expected maven config message, got: %s", buf.String())
+	}
+	settingsPath := filepath.Join(home, ".m2", "settings.xml")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("settings.xml not found: %v", err)
+	}
+	if !strings.Contains(string(data), "bulwark-maven") {
+		t.Error("settings.xml missing bulwark mirror")
+	}
+}
+
+func TestEnsurePkgMgrConfigMavenSkips(t *testing.T) {
+	home := t.TempDir()
+	p := mavenProxyInfo()
+	m2Dir := filepath.Join(home, ".m2")
+	if err := os.MkdirAll(m2Dir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m2Dir, "settings.xml"), []byte(MavenSettingsXML(p.Port)), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	EnsurePkgMgrConfig(p, home, testDarwin, &buf)
+	if buf.String() != "" {
+		t.Errorf("expected no output when config already correct, got: %s", buf.String())
+	}
+}
+
+func TestEnsurePkgMgrConfigNpm(t *testing.T) {
+	p := testProxyInfo()
+	var buf bytes.Buffer
+	EnsurePkgMgrConfig(p, t.TempDir(), testDarwin, &buf)
+	// activateNpm is best-effort external command; just verify no panic.
+	_ = buf.String()
+}
+
 // --- writeAutostartFile edge cases ---
 
 func TestWriteAutostartFileUnsupportedOS(t *testing.T) {

@@ -225,6 +225,29 @@ func writePkgMgrConfig(p ProxyInfo, home, goos string, out io.Writer) {
 	}
 }
 
+// EnsurePkgMgrConfig configures the local package manager to route requests
+// through the Bulwark proxy. It is idempotent: if the existing configuration
+// already points to the correct proxy URL, no changes are made.
+func EnsurePkgMgrConfig(p ProxyInfo, home, goos string, out io.Writer) {
+	switch p.Ecosystem {
+	case EcosystemPypi:
+		_, cfgFile := PipConfigPaths(home, goos)
+		needle := fmt.Sprintf("http://localhost:%d/simple/", p.Port)
+		if data, err := os.ReadFile(cfgFile); err == nil && strings.Contains(string(data), needle) {
+			return
+		}
+		writePkgMgrConfig(p, home, goos, out)
+	case EcosystemMaven:
+		settingsPath := filepath.Join(home, ".m2", "settings.xml")
+		if data, err := os.ReadFile(settingsPath); err == nil && strings.Contains(string(data), "bulwark-maven") {
+			return
+		}
+		writePkgMgrConfig(p, home, goos, out)
+	case EcosystemNpm:
+		activateNpm(p.Port, out)
+	}
+}
+
 // --- Autostart ---
 
 // AutostartDir returns the OS-specific autostart directory.
