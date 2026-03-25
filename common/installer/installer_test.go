@@ -2223,6 +2223,18 @@ func TestPatchConfigForVSCodeOpenVSX(t *testing.T) {
 	}
 }
 
+func TestPatchConfigForVSCodeUpstreamAtEOF(t *testing.T) {
+	input := []byte("upstream:\n  url: \"https://open-vsx.org\"\n  timeout_seconds: 30")
+	result := PatchConfigForVSCode(input, "https://marketplace.visualstudio.com", "marketplace")
+	s := string(result)
+	if !strings.Contains(s, "marketplace.visualstudio.com") {
+		t.Errorf("URL not patched: %s", s)
+	}
+	if !strings.Contains(s, `registry_type: "marketplace"`) {
+		t.Errorf("registry_type not appended at EOF; got:\n%s", s)
+	}
+}
+
 func TestAutoConfigureVSCodeUpstreamMicrosoft(t *testing.T) {
 	home := t.TempDir()
 	// Create Microsoft VS Code user-data dir.
@@ -2398,6 +2410,21 @@ upstream:
 	}
 	if strings.Contains(s, "/old/") {
 		t.Errorf("old paths still present; got:\n%s", s)
+	}
+}
+
+func TestPatchConfigForTLSServerAtEOF(t *testing.T) {
+	input := `upstream:
+  url: "https://example.com"
+server:
+  port: 18003`
+	result := PatchConfigForTLS([]byte(input), "/cert.pem", "/key.pem")
+	s := string(result)
+	if !strings.Contains(s, `tls_cert_file: "/cert.pem"`) {
+		t.Errorf("tls_cert_file not appended at EOF; got:\n%s", s)
+	}
+	if !strings.Contains(s, `tls_key_file: "/key.pem"`) {
+		t.Errorf("tls_key_file not appended at EOF; got:\n%s", s)
 	}
 }
 

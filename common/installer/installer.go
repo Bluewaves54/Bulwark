@@ -332,6 +332,9 @@ func PatchConfigForTLS(configData []byte, certPath, keyPath string) []byte {
 		}
 		result = append(result, line)
 	}
+	if inServer {
+		result, _ = appendTLSIfNeeded(result, certWritten, certPath, keyPath)
+	}
 	return []byte(strings.Join(result, "\n"))
 }
 
@@ -913,6 +916,9 @@ func PatchConfigForVSCode(configData []byte, upstreamURL, registryType string) [
 		}
 		result = append(result, line)
 	}
+	if inUpstream && !registryTypeWritten {
+		result = append(result, fmt.Sprintf("  registry_type: %q", registryType))
+	}
 	return []byte(strings.Join(result, "\n"))
 }
 
@@ -1056,8 +1062,10 @@ func writeVsxProductJSON(dir string, baseURL string, out io.Writer, installDirs 
 	cfgFile := filepath.Join(dir, "product.json")
 	if data, err := os.ReadFile(cfgFile); err == nil {
 		backup := cfgFile + ".bulwark-backup"
-		os.WriteFile(backup, data, cfgPerm) //nolint:errcheck // best-effort backup
-		fmt.Fprintf(out, "[ok] Existing product.json backed up to %s\n", backup)
+		if _, berr := os.Stat(backup); os.IsNotExist(berr) {
+			os.WriteFile(backup, data, cfgPerm) //nolint:errcheck // best-effort backup
+			fmt.Fprintf(out, "[ok] Existing product.json backed up to %s\n", backup)
+		}
 	}
 	content := resolveVsxOverlayContent(baseURL, installDirs)
 	if err := os.WriteFile(cfgFile, content, cfgPerm); err != nil {
@@ -1157,12 +1165,18 @@ func SetupFiles(p ProxyInfo, home, exePath, goos string, out io.Writer) error {
 		// HTTP connections, so HTTPS is required for the gallery proxy.
 		certPath := filepath.Join(paths.EcoDir, "tls.crt")
 		keyPath := filepath.Join(paths.EcoDir, "tls.key")
-		if err := GenerateSelfSignedCert(certPath, keyPath); err != nil {
-			return fmt.Errorf("generating TLS certificate: %w", err)
+		_, certErr := os.Stat(certPath)
+		_, keyErr := os.Stat(keyPath)
+		if certErr != nil || keyErr != nil {
+			if err := GenerateSelfSignedCert(certPath, keyPath); err != nil {
+				return fmt.Errorf("generating TLS certificate: %w", err)
+			}
+			fmt.Fprintf(out, "[ok] TLS certificate generated: %s\n", certPath)
+			installCertInTrustStore(certPath, goos, out)
+		} else {
+			fmt.Fprintf(out, "[ok] Reusing existing TLS certificate: %s\n", certPath)
 		}
-		fmt.Fprintf(out, "[ok] TLS certificate generated: %s\n", certPath)
 		configData = PatchConfigForTLS(configData, certPath, keyPath)
-		installCertInTrustStore(certPath, goos, out)
 	}
 
 	if err := os.WriteFile(paths.Config, configData, cfgPerm); err != nil {

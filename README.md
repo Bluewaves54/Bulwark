@@ -477,11 +477,11 @@ docker build -f vsx-bulwark/Dockerfile -t bulwark-vsx:latest .
 
 # Run with best practices config
 docker run -p 18001:18001 \
-  -v $(pwd)/npm-bulwark/config-best-practices.yaml:/app/config.yaml \
+  -v $(pwd)/npm-bulwark/config-best-practices.yaml:/config.yaml \
   bulwark-npm:latest
 
 docker run -p 18003:18003 \
-  -v $(pwd)/vsx-bulwark/config-best-practices.yaml:/app/config.yaml \
+  -v $(pwd)/vsx-bulwark/config-best-practices.yaml:/config.yaml \
   bulwark-vsx:latest
 ```
 
