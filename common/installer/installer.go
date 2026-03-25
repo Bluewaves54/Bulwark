@@ -572,7 +572,7 @@ func VsxRepairInstallDirs(home, goos string, port int, out io.Writer) {
 			continue // already patched — VS Code has not updated since last setup
 		}
 		// The product.json was replaced by a VS Code update. Re-patch silently.
-		slog.Info("VS Code update detected; re-patching gallery config", "path", cfgFile)
+		fmt.Fprintf(out, "VS Code update detected; re-patching gallery config (path: %s)\n", cfgFile)
 		patchInstallProductJSON(dir, baseURL, out)
 	}
 }
