@@ -33,7 +33,6 @@ const (
 )
 
 // Server holds all runtime state for the vsx-bulwark proxy.
-// Server holds all runtime state for the vsx-bulwark proxy.
 type Server struct {
 	cfg        *config.Config
 	engine     *rules.RuleEngine

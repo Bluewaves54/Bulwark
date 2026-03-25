@@ -15,7 +15,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"net"
 	"net/url"
@@ -394,9 +393,6 @@ func VsxConfigDirs(home, goos string) []string {
 	return dirs
 }
 
-// VsxGalleryProductJSON returns the product.json content that redirects
-// extension gallery traffic through the Bulwark proxy. Includes _comment
-// and _revert keys so the user understands what the file is and how to undo it.
 // VsxInstallDirs returns the product.json parent directories inside each VS
 // Code and VS Code Insiders installation on Windows. On Windows, Microsoft VS
 // Code reads product.json from its installation directory
