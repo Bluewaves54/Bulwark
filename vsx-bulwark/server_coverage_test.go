@@ -2760,6 +2760,33 @@ func TestCORSPreflightEchoesRequestHeaders(t *testing.T) {
 	}
 }
 
+// TestCORSExcludedFromAdminEndpoints verifies that admin endpoints do not
+// receive CORS headers, preventing cross-origin access to administrative
+// functions like log-level changes.
+func TestCORSExcludedFromAdminEndpoints(t *testing.T) {
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 18003},
+		Upstream: config.UpstreamConfig{URL: testUpstreamURL, TimeoutSeconds: 5},
+		Cache:    config.CacheConfig{TTLSeconds: 60},
+		Logging:  config.LoggingConfig{Level: "error", Format: "text"},
+	}
+	cfg.Defaults()
+	logger, logLevel, _ := createLogger(cfg.Logging.Format, cfg.Logging.Level, "")
+	srv, _ := buildServer(cfg, logger, logLevel)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/log-level", nil)
+	req.Header.Set("Origin", "https://evil.com")
+	srv.handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("admin endpoint should not have Access-Control-Allow-Origin, got %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("admin endpoint should not have Access-Control-Allow-Credentials, got %q", got)
+	}
+}
+
 // TestGalleryPassthroughForwardsMarketClientID confirms that
 // handleGalleryPassthrough forwards X-Market-Client-Id (and related headers)
 // to the upstream. Without this header the Microsoft Marketplace returns 400.

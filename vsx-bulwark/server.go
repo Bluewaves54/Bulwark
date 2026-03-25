@@ -151,9 +151,10 @@ func (s *Server) upstreamItemURL(proxyPath string) string {
 }
 
 // upstreamAPIURL maps a proxy /api/ path to the correct upstream URL.
-// For Open VSX the path is forwarded as-is. For the Microsoft Marketplace
-// the Open VSX REST API is not available, so API calls are translated to
-// the corresponding gallery endpoint.
+// The path is forwarded as-is to the upstream. Note: Open VSX REST API
+// paths (e.g. /api/{ns}/{ext}) are not available on the Microsoft
+// Marketplace — callers that need Marketplace support must use the
+// gallery endpoints directly (see handleExtension for an example).
 func (s *Server) upstreamAPIURL(proxyPath string) string {
 	return s.cfg.Upstream.URL + proxyPath
 }
@@ -390,31 +391,38 @@ const defaultCORSAllowHeaders = "Content-Type, Accept, Accept-Encoding, Accept-L
 	"Authorization, User-Agent, X-Market-Client-Id, X-Market-User-Id, " +
 	"X-Market-Telemetry-Id, X-TFS-FedAuthRedirect"
 
+// setCORSHeaders writes CORS response headers for non-admin paths.
+// Admin endpoints are excluded to prevent cross-origin access to
+// administrative functions (e.g. log-level changes).
+func setCORSHeaders(w http.ResponseWriter, origin string) {
+	if origin == "" {
+		origin = "*"
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	if origin != "*" {
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Add("Vary", "Origin")
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", defaultCORSAllowHeaders)
+	w.Header().Set("Access-Control-Expose-Headers", "X-Cache, X-Curation-Policy-Notice")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+}
+
 func corsAndLogMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Mirror the request Origin so that credentialed fetch calls
-		// (credentials:'include') work in the VS Code Extensions webview.
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "*"
+		isAdmin := strings.HasPrefix(r.URL.Path, "/admin/")
+		if !isAdmin {
+			setCORSHeaders(w, r.Header.Get("Origin"))
 		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		if origin != "*" {
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Add("Vary", "Origin")
-		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
-		// Set on every response (informational for non-preflight, enforced for OPTIONS).
-		w.Header().Set("Access-Control-Allow-Headers", defaultCORSAllowHeaders)
-		w.Header().Set("Access-Control-Expose-Headers", "X-Cache, X-Curation-Policy-Notice")
-		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == http.MethodOptions {
 			// Echo back any headers the client requests so that new VS Code
-			// versions that add headers (e.g. X-Market-Telemetry-Id) don't
-			// require a proxy update to pass the preflight check.
-			if reqHdrs := r.Header.Get("Access-Control-Request-Headers"); reqHdrs != "" {
-				w.Header().Set("Access-Control-Allow-Headers", reqHdrs)
+			// versions that add headers don't require a proxy update.
+			if !isAdmin {
+				if reqHdrs := r.Header.Get("Access-Control-Request-Headers"); reqHdrs != "" {
+					w.Header().Set("Access-Control-Allow-Headers", reqHdrs)
+				}
 			}
 			w.WriteHeader(http.StatusNoContent)
 			return

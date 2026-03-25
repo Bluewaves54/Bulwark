@@ -120,7 +120,10 @@ func run(ctx context.Context, cfgPath string, configExplicit, setupMode, uninsta
 	// directory on each update, which discards the product.json patch written by
 	// -setup. Re-check and re-patch on every startup so protection is
 	// automatically restored after a VS Code update without any user action.
-	installer.VsxRepairInstallDirs(home, runtime.GOOS, proxy.Port, out)
+	// Only run repair when a prior -setup has been performed (state file exists).
+	if installer.IsInstalledAt(proxy, home, runtime.GOOS) {
+		installer.VsxRepairInstallDirs(home, runtime.GOOS, proxy.Port, out)
+	}
 
 	srv, logger, logFile, err := initServer(effectiveCfg, authToken, authUser, authPass)
 	if err != nil {

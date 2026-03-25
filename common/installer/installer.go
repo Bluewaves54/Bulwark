@@ -287,8 +287,14 @@ func installCertInTrustStore(certPath, goos string, out io.Writer) {
 			fmt.Fprintf(out, "[ok] Certificate added to user trust store\n")
 		}
 	case OSDarwin:
+		homeDir, hdErr := os.UserHomeDir()
+		if hdErr != nil || homeDir == "" {
+			fmt.Fprintf(out, "[warn] Could not determine home directory for login keychain: %v\n", hdErr)
+			fmt.Fprintf(out, "       Install manually: security add-trusted-cert -r trustAsRoot -k ~/Library/Keychains/login.keychain-db %s\n", certPath)
+			return
+		}
 		cmd := exec.Command("security", "add-trusted-cert", "-r", "trustAsRoot", //nolint:gosec // user-initiated setup
-			"-k", filepath.Join(os.Getenv("HOME"), "Library", "Keychains", "login.keychain-db"),
+			"-k", filepath.Join(homeDir, "Library", "Keychains", "login.keychain-db"),
 			certPath)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(out, "[warn] Could not install cert in trust store: %v\n", err)
