@@ -1,0 +1,29 @@
+upstream:
+  url: https://open-vsx.org
+  timeout_seconds: 30
+
+server:
+  port: 18003
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+
+cache:
+  ttl_seconds: 60
+
+metrics:
+  enabled: true
+
+logging:
+  level: info
+  format: text
+
+policy:
+  dry_run: false
+  trusted_packages:
+    - "redhat.*"
+  rules:
+    - name: block-all-young
+      min_package_age_days: 10000
+  defaults:
+    block_pre_releases: true
+    min_package_age_days: 3

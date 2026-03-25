@@ -116,6 +116,43 @@ func TestEvaluateVersionPreRelease(t *testing.T) {
 	}
 }
 
+// TestEvaluateVersionPreReleaseFlag verifies that the explicit PreRelease flag
+// on VersionMeta blocks a version even when the version string looks normal.
+func TestEvaluateVersionPreReleaseFlag(t *testing.T) {
+	policy := config.PolicyConfig{Rules: []config.PackageRule{
+		{Name: ruleDefault, BlockPreRelease: true},
+	}}
+	engine := rules.New(policy)
+	pkg := rules.PackageMeta{Name: testPkgRequests}
+
+	// Normal-looking version but flagged as pre-release by the registry.
+	dec := engine.EvaluateVersion(pkg, rules.VersionMeta{Version: "2026.3.1805", PreRelease: true})
+	if dec.Allow {
+		t.Error("version with PreRelease=true must be denied by block-pre-release rule")
+	}
+
+	// Same version without the flag must be allowed.
+	dec2 := engine.EvaluateVersion(pkg, rules.VersionMeta{Version: "2026.3.1805"})
+	if !dec2.Allow {
+		t.Error("version without PreRelease flag must be allowed")
+	}
+}
+
+// TestEvaluateVersionPreReleaseFlagGlobalDefault verifies that the global
+// defaults BlockPreReleases also honours the VersionMeta.PreRelease flag.
+func TestEvaluateVersionPreReleaseFlagGlobalDefault(t *testing.T) {
+	policy := config.PolicyConfig{
+		Defaults: config.RulesDefaults{BlockPreReleases: true},
+	}
+	engine := rules.New(policy)
+	pkg := rules.PackageMeta{Name: testPkgRequests}
+
+	dec := engine.EvaluateVersion(pkg, rules.VersionMeta{Version: "2026.3.100", PreRelease: true})
+	if dec.Allow {
+		t.Error("global default BlockPreReleases must deny versions with PreRelease=true")
+	}
+}
+
 func TestEvaluateVersionSnapshot(t *testing.T) {
 	policy := config.PolicyConfig{Rules: []config.PackageRule{
 		{Name: ruleDefault, BlockSnapshots: true},

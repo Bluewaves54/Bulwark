@@ -21,6 +21,7 @@ var (
 	pypiProxyURL  string
 	npmProxyURL   string
 	mavenProxyURL string
+	vsxProxyURL   string
 )
 
 // Shared binary paths — built once in TestMain, used by filter tests that start their own proxy.
@@ -28,6 +29,7 @@ var (
 	pypiProxyBinPath  string
 	npmProxyBinPath   string
 	mavenProxyBinPath string
+	vsxProxyBinPath   string
 )
 
 // TestMain builds all proxy binaries, starts allow-all proxy instances, runs the
@@ -55,20 +57,24 @@ func TestMain(m *testing.M) {
 	pypiProxyBinPath = buildBinaryMain(repoRoot, pypiDir, tmpDir)
 	npmProxyBinPath = buildBinaryMain(repoRoot, npmDir, tmpDir)
 	mavenProxyBinPath = buildBinaryMain(repoRoot, mavenDir, tmpDir)
+	vsxProxyBinPath = buildBinaryMain(repoRoot, vsxDir, tmpDir)
 
 	pypiProxy := startProxyMain(pypiProxyBinPath, filepath.Join(cfgDir, "pypi-allow-all.yaml"), pypiE2EPort)
 	npmProxy := startProxyMain(npmProxyBinPath, filepath.Join(cfgDir, "npm-allow-all.yaml"), npmE2EPort)
 	mavenProxy := startProxyMain(mavenProxyBinPath, filepath.Join(cfgDir, "maven-allow-all.yaml"), mavenE2EPort)
+	vsxProxy := startProxyMain(vsxProxyBinPath, filepath.Join(cfgDir, "vsx-allow-all.yaml"), vsxE2EPort)
 
 	pypiProxyURL = pypiProxy.BaseURL
 	npmProxyURL = npmProxy.BaseURL
 	mavenProxyURL = mavenProxy.BaseURL
+	vsxProxyURL = vsxProxy.BaseURL
 
 	code := m.Run()
 
 	pypiProxy.Stop()
 	npmProxy.Stop()
 	mavenProxy.Stop()
+	vsxProxy.Stop()
 	_ = os.RemoveAll(tmpDir)
 	os.Exit(code)
 }
@@ -118,4 +124,3 @@ func pollHealthzMain(healthURL string) {
 	}
 	log.Fatalf("e2e: proxy did not become healthy at %s within 15s", healthURL)
 }
-

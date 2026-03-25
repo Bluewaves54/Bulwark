@@ -1,0 +1,26 @@
+upstream:
+  url: https://open-vsx.org
+  timeout_seconds: 30
+
+server:
+  port: 18003
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+
+cache:
+  ttl_seconds: 60
+
+metrics:
+  enabled: true
+
+logging:
+  level: info
+  format: text
+
+policy:
+  dry_run: false
+  rules:
+    - name: block-prerelease-pkg
+      package_patterns:
+        - "redhat.java"
+      block_pre_release: true

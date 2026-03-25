@@ -300,3 +300,107 @@ func TestFailModeInvalid(t *testing.T) {
 		t.Fatal("expected error for invalid fail_mode")
 	}
 }
+
+func TestRegistryTypeDefaultsToOpenVSX(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://open-vsx.org\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Upstream.RegistryType != config.RegistryOpenVSX {
+		t.Errorf("registry_type: want %q, got %q", config.RegistryOpenVSX, cfg.Upstream.RegistryType)
+	}
+}
+
+func TestRegistryTypeMarketplaceValid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://marketplace.visualstudio.com\"\n  registry_type: \"marketplace\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Upstream.RegistryType != config.RegistryMarketplace {
+		t.Errorf("registry_type: want %q, got %q", config.RegistryMarketplace, cfg.Upstream.RegistryType)
+	}
+}
+
+func TestRegistryTypeOpenVSXValid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://open-vsx.org\"\n  registry_type: \"openvsx\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Upstream.RegistryType != config.RegistryOpenVSX {
+		t.Errorf("registry_type: want %q, got %q", config.RegistryOpenVSX, cfg.Upstream.RegistryType)
+	}
+}
+
+func TestRegistryTypeInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "upstream:\n  url: \"https://example.com\"\n  registry_type: \"foo\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected error for invalid registry_type")
+	}
+}
+
+func TestTLSConfigBothSet(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+server:
+  tls_cert_file: "/path/to/cert.pem"
+  tls_key_file: "/path/to/key.pem"
+upstream:
+  url: "https://example.com"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Server.TLSCertFile != "/path/to/cert.pem" {
+		t.Errorf("tls_cert_file: want /path/to/cert.pem, got %q", cfg.Server.TLSCertFile)
+	}
+	if cfg.Server.TLSKeyFile != "/path/to/key.pem" {
+		t.Errorf("tls_key_file: want /path/to/key.pem, got %q", cfg.Server.TLSKeyFile)
+	}
+}
+
+func TestTLSConfigOnlyOneSet(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+server:
+  tls_cert_file: "/path/to/cert.pem"
+upstream:
+  url: "https://example.com"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected validation error when only tls_cert_file is set")
+	}
+}

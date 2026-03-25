@@ -27,15 +27,26 @@ type Config struct {
 
 // ServerConfig holds listener settings.
 type ServerConfig struct {
-	Port                int `yaml:"port"`
-	ReadTimeoutSeconds  int `yaml:"read_timeout_seconds"`
-	WriteTimeoutSeconds int `yaml:"write_timeout_seconds"`
-	IdleTimeoutSeconds  int `yaml:"idle_timeout_seconds"`
+	Port                int    `yaml:"port"`
+	ReadTimeoutSeconds  int    `yaml:"read_timeout_seconds"`
+	WriteTimeoutSeconds int    `yaml:"write_timeout_seconds"`
+	IdleTimeoutSeconds  int    `yaml:"idle_timeout_seconds"`
+	TLSCertFile         string `yaml:"tls_cert_file"`
+	TLSKeyFile          string `yaml:"tls_key_file"`
 }
+
+// Registry type constants for upstream configuration.
+const (
+	// RegistryOpenVSX indicates the upstream is an Open VSX compatible registry.
+	RegistryOpenVSX = "openvsx"
+	// RegistryMarketplace indicates the upstream is the Microsoft VS Marketplace.
+	RegistryMarketplace = "marketplace"
+)
 
 // UpstreamConfig holds settings for the upstream (public) registry.
 type UpstreamConfig struct {
 	URL                  string    `yaml:"url"`
+	RegistryType         string    `yaml:"registry_type"`
 	TimeoutSeconds       int       `yaml:"timeout_seconds"`
 	Username             string    `yaml:"username"`
 	Password             string    `yaml:"password"`
@@ -221,19 +232,49 @@ func (c *Config) Defaults() {
 	if c.Policy.FailMode == "" {
 		c.Policy.FailMode = FailModeOpen
 	}
+	if c.Upstream.RegistryType == "" {
+		c.Upstream.RegistryType = RegistryOpenVSX
+	}
 }
 
 // Validate returns an error if the configuration is semantically invalid.
 func (c *Config) Validate() error {
+	if err := c.validateUpstream(); err != nil {
+		return err
+	}
+	if err := c.validateServer(); err != nil {
+		return err
+	}
+	if err := c.validatePolicy(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Config) validateUpstream() error {
 	if c.Upstream.URL == "" {
 		return errors.New("upstream.url is required")
 	}
 	if !strings.HasPrefix(c.Upstream.URL, "https://") && !strings.HasPrefix(c.Upstream.URL, "http://") {
 		return fmt.Errorf("upstream.url must start with http:// or https://, got %q", c.Upstream.URL)
 	}
+	if c.Upstream.RegistryType != RegistryOpenVSX && c.Upstream.RegistryType != RegistryMarketplace {
+		return fmt.Errorf("upstream.registry_type must be %q or %q, got %q", RegistryOpenVSX, RegistryMarketplace, c.Upstream.RegistryType)
+	}
+	return nil
+}
+
+func (c *Config) validateServer() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port must be 1-65535, got %d", c.Server.Port)
 	}
+	if (c.Server.TLSCertFile != "") != (c.Server.TLSKeyFile != "") {
+		return errors.New("server.tls_cert_file and server.tls_key_file must both be set or both be empty")
+	}
+	return nil
+}
+
+func (c *Config) validatePolicy() error {
 	for _, r := range c.Policy.Rules {
 		if r.Action != "deny" && r.Action != "allow" && r.Action != "" {
 			return fmt.Errorf("rule %q: action must be \"deny\" or \"allow\", got %q", r.Name, r.Action)

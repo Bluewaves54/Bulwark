@@ -14,6 +14,7 @@
 package e2e
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"os"
@@ -30,6 +31,7 @@ const (
 	pypiE2EPort  = 18100
 	npmE2EPort   = 18101
 	mavenE2EPort = 18102
+	vsxE2EPort   = 18103
 )
 
 // Module directory names.
@@ -37,6 +39,7 @@ const (
 	pypiDir  = "pypi-bulwark"
 	npmDir   = "npm-bulwark"
 	mavenDir = "maven-bulwark"
+	vsxDir   = "vsx-bulwark"
 )
 
 // ProxyProcess holds a running proxy child process and its base URL.
@@ -113,6 +116,16 @@ func mustGet(t *testing.T, rawURL string) *http.Response {
 	resp, err := http.Get(rawURL)
 	if err != nil {
 		t.Fatalf("GET %s: %v", rawURL, err)
+	}
+	return resp
+}
+
+// mustPost performs an HTTP POST with the given content type and body, failing on error.
+func mustPost(t *testing.T, rawURL, contentType string, body []byte) *http.Response {
+	t.Helper()
+	resp, err := http.Post(rawURL, contentType, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST %s: %v", rawURL, err)
 	}
 	return resp
 }

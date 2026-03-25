@@ -12,13 +12,14 @@ The Bulwark sits between developer tools and public package registries, acting a
 C4Context
   title System Context — Bulwark
 
-  Person(dev, "Developer / CI Pipeline", "Uses language-specific package managers: pip, npm, mvn")
+  Person(dev, "Developer / CI Pipeline", "Uses language-specific package managers: pip, npm, mvn, VS Code / VSCodium / Code OSS")
 
     System(bulwark, "Bulwark", "HTTP proxy gateway that enforces package security policy. Filters versions by age, pre-release status, namespace, typosquatting, velocity, and custom rules.")
 
   System_Ext(pypi, "PyPI (pypi.org)", "Python package index")
   System_Ext(npm, "npm Registry (registry.npmjs.org)", "JavaScript package registry")
   System_Ext(maven, "Maven Central (repo1.maven.org)", "Java package repository")
+  System_Ext(openvsx, "Open VSX (open-vsx.org)", "VS Code extension marketplace")
   System_Ext(enterprise, "Enterprise Registry\n(corporate artifact repository)", "Corporate package mirror and internal artifact store")
   System_Ext(osv, "OSV.dev / NVD", "Vulnerability advisory feeds (future)")
 
@@ -26,10 +27,12 @@ C4Context
     Rel(bulwark, pypi, "Filtered requests (Topology A)", "HTTPS")
     Rel(bulwark, npm, "Filtered requests (Topology A)", "HTTPS")
     Rel(bulwark, maven, "Filtered requests (Topology A)", "HTTPS")
+    Rel(bulwark, openvsx, "Filtered requests (Topology A)", "HTTPS")
     Rel(bulwark, enterprise, "Filtered requests (Topology B)", "HTTPS")
   Rel(enterprise, pypi, "Upstream fetch (Topology B)", "HTTPS")
   Rel(enterprise, npm, "Upstream fetch (Topology B)", "HTTPS")
   Rel(enterprise, maven, "Upstream fetch (Topology B)", "HTTPS")
+  Rel(enterprise, openvsx, "Upstream fetch (Topology B)", "HTTPS")
     Rel(bulwark, osv, "Advisory feed pull (future)", "HTTPS")
 ```
 
@@ -50,6 +53,7 @@ C4Container
     Container(pypi_proxy, "pypi-bulwark", "Go binary", "Implements PyPI Simple Index and PEP 691 protocols. Port 18000.")
     Container(npm_proxy, "npm-bulwark", "Go binary", "Implements npm registry / packument protocol. Port 18001.")
     Container(maven_proxy, "maven-bulwark", "Go binary", "Implements Maven 2 repository protocol. Port 18002.")
+    Container(vsx_proxy, "vsx-bulwark", "Go binary", "Implements Open VSX / VS Code Gallery API. Filters extension searches (extensionquery), VSIX downloads, and metadata. Port 18003.")
 
     ContainerDb(cache, "In-Process Cache", "sync.RWMutex + map + TTL", "Per-binary TTL cache. Keyed by request URL. TTL configurable; max_size_mb is reserved but not yet enforced.")
     Container(rule_engine, "Rule Engine (common/)", "Go module", "Shared: EvaluatePackage, EvaluateVersion, trusted packages, typosquatting, namespace protection, install scripts, velocity detection.")
@@ -60,18 +64,22 @@ C4Container
   Rel(dev, pypi_proxy, "pip / pip3 / uv / poetry / pdm", "HTTP :18000")
   Rel(dev, npm_proxy, "npm / yarn / pnpm", "HTTP :18001")
   Rel(dev, maven_proxy, "mvn / gradle", "HTTP :18002")
+  Rel(dev, vsx_proxy, "VS Code / VS Code Insiders / VSCodium / Code OSS", "HTTPS :18003")
 
   Rel(pypi_proxy, rule_engine, "uses")
   Rel(npm_proxy, rule_engine, "uses")
   Rel(maven_proxy, rule_engine, "uses")
+  Rel(vsx_proxy, rule_engine, "uses")
   Rel(pypi_proxy, cache, "read/write")
   Rel(npm_proxy, cache, "read/write")
   Rel(maven_proxy, cache, "read/write")
+  Rel(vsx_proxy, cache, "read/write")
   Rel(rule_engine, config, "reads")
 
   Rel(pypi_proxy, upstream, "HTTPS (validated)")
   Rel(npm_proxy, upstream, "HTTPS (validated)")
   Rel(maven_proxy, upstream, "HTTPS (validated)")
+  Rel(vsx_proxy, upstream, "HTTPS (validated)")
 ```
 
 ---
@@ -121,6 +129,7 @@ flowchart TD
         pip["pip / uv / poetry\n~/.pip/pip.conf\nindex-url = http://bulwark:18000/simple/"]
         npm_cli["npm / yarn / pnpm\n.npmrc\nregistry=http://bulwark:18001/"]
         mvn["mvn / gradle\nsettings.xml mirror\nurl: http://bulwark:18002/"]
+        vscode["VS Code / VS Code Insiders\nVSCodium / Code OSS\nproduct.json\nserviceUrl: https://bulwark:18003/vscode/gallery"]
     end
 
     subgraph Kubernetes / Docker — Bulwark Proxy
@@ -128,25 +137,30 @@ flowchart TD
         PyPI["pypi-bulwark :18000\nTopology A config\nupstream: https://pypi.org"]
         NPM["npm-bulwark :18001\nTopology A config\nupstream: https://registry.npmjs.org"]
         MVN["maven-bulwark :18002\nTopology A config\nupstream: https://repo1.maven.org"]
+        VSX["vsx-bulwark :18003\nTopology A config\nupstream: https://open-vsx.org"]
     end
 
     subgraph Public Internet
         PyPIReg["pypi.org\nfiles.pythonhosted.org"]
         NpmReg["registry.npmjs.org"]
         MavenCentral["repo1.maven.org"]
+        OpenVSX["open-vsx.org"]
     end
 
     pip -->|HTTP :18000| PyPI
     npm_cli -->|HTTP :18001| NPM
     mvn -->|HTTP :18002| MVN
+    vscode -->|HTTP :18003| VSX
 
     PyPI -->|HTTPS filtered| PyPIReg
     NPM -->|HTTPS filtered| NpmReg
     MVN -->|HTTPS filtered| MavenCentral
+    VSX -->|HTTPS filtered| OpenVSX
 
     style PyPI fill:#2563eb,color:#fff
     style NPM fill:#2563eb,color:#fff
     style MVN fill:#2563eb,color:#fff
+    style VSX fill:#2563eb,color:#fff
 ```
 
 ---
@@ -199,7 +213,50 @@ flowchart TD
 
 ---
 
-## 6. Request Filtering Pipeline — State Machine
+## 6. Deployment Topology C — Shared VSX Server (Corporate)
+
+A single `vsx-bulwark` instance runs on a shared server. Developer laptops configure VS Code to use it via a one-time client-only setup; no local proxy runs on the laptop.
+
+```mermaid
+flowchart TD
+    subgraph Developer Laptops
+        vscode1["VS Code (laptop 1)\nproduct.json\nserviceUrl: https://bulwark.corp.com:18003/vscode/gallery"]
+        vscode2["VS Code (laptop 2)\nproduct.json\nserviceUrl: https://bulwark.corp.com:18003/vscode/gallery"]
+    end
+
+    subgraph Corporate Server
+        VSX_C["vsx-bulwark :18003\nTLS: corp-signed cert\nconfig.yaml → tls_cert_file / tls_key_file\nupstream: https://open-vsx.org"]
+    end
+
+    subgraph Public Internet
+        OpenVSX2["open-vsx.org\nor marketplace.visualstudio.com"]
+    end
+
+    vscode1 -->|HTTPS :18003| VSX_C
+    vscode2 -->|HTTPS :18003| VSX_C
+    VSX_C -->|HTTPS filtered| OpenVSX2
+
+    style VSX_C fill:#2563eb,color:#fff
+```
+
+**Server setup:**
+1. Set `tls_cert_file` and `tls_key_file` in `config.yaml` to a corp-CA-signed or Let's Encrypt certificate for the server hostname.
+2. Run `vsx-bulwark -config config.yaml`.
+
+**Laptop setup (each developer, run once):**
+```bash
+./vsx-bulwark -setup -server https://bulwark.corp.com:18003
+```
+This writes `product.json` to the detected VS Code-family user-data directories and records the configured targets in `~/.bulwark/vsx-bulwark/vsx-targets.json` so uninstall and Windows repair only touch the variants Bulwark actually configured. No binary is installed locally and no local proxy starts.
+
+**Revert:**
+```bash
+./vsx-bulwark -uninstall
+```
+
+---
+
+## 7. Request Filtering Pipeline — State Machine
 
 Every proxy request follows the same decision pipeline. The diagram below shows the PyPI simple-index path as the canonical example.
 
@@ -251,31 +308,35 @@ When a package is entirely blocked — either by a package-level deny rule or be
 
 **Package-level / all-versions-removed blocks (metadata endpoints):**
 
-| Ecosystem | Response Format | Example Body |
-|---|---|---|
-| **npm** | JSON `{"error":"..."}` | `{"error":"[Bulwark] event-stream: package matches deny list"}` |
-| **PyPI** | Plain text | `[Bulwark] requests: all available versions blocked by policy` |
+| Ecosystem | Response Format               | Example Body                                                            |
+| --------- | ----------------------------- | ----------------------------------------------------------------------- |
+| **npm**   | JSON `{"error":"..."}`        | `{"error":"[Bulwark] event-stream: package matches deny list"}`         |
+| **PyPI**  | Plain text                    | `[Bulwark] requests: all available versions blocked by policy`          |
 | **Maven** | Plain text (via `http.Error`) | `[Bulwark] com.example:mylib: all available versions blocked by policy` |
+| **VSX**   | Plain text (via `http.Error`) | `[Bulwark] ns.ext: all available versions blocked by policy`            |
 
-**Direct download blocks (tarball / artifact / external URL):**
+**Direct download blocks (tarball / artifact / external URL / VSIX):**
 
-| Ecosystem | Endpoint | Example Body |
-|---|---|---|
-| **npm** | tarball `/<pkg>/-/<file>.tgz` | `[Bulwark] lodash@5.0.0-beta.1: pre-release version blocked` |
-| **npm** | tarball (package-level) | `[Bulwark] event-stream: package matches deny list` |
-| **PyPI** | `/external?url=...` | `[Bulwark] name too similar to protected package 'requests'` |
-| **Maven** | artifact `/.../1.0-RC1/lib.jar` | `[Bulwark] com/example:mylib@1.0-RC1: pre-release version blocked` |
-| **Maven** | artifact (package-level) | `[Bulwark] com/example:mylib: package matches deny list` |
+| Ecosystem | Endpoint                                 | Example Body                                                       |
+| --------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| **npm**   | tarball `/<pkg>/-/<file>.tgz`            | `[Bulwark] lodash@5.0.0-beta.1: pre-release version blocked`       |
+| **npm**   | tarball (package-level)                  | `[Bulwark] event-stream: package matches deny list`                |
+| **PyPI**  | `/external?url=...`                      | `[Bulwark] name too similar to protected package 'requests'`       |
+| **Maven** | artifact `/.../1.0-RC1/lib.jar`          | `[Bulwark] com/example:mylib@1.0-RC1: pre-release version blocked` |
+| **Maven** | artifact (package-level)                 | `[Bulwark] com/example:mylib: package matches deny list`           |
+| **VSX**   | VSIX `/api/{ns}/{ext}/{ver}/file/{file}` | `[Bulwark] ns.ext@1.0.0-rc.1: pre-release version blocked`         |
+| **VSX**   | VSIX (package-level)                     | `[Bulwark] ns.ext: package matches deny list`                      |
+| **VSX**   | gallery vspackage (package-level)        | `[Bulwark] ns.ext: package matches deny list`                      |
 
 This ensures package managers display a meaningful error message (e.g., npm shows the `error` field) instead of confusing messages like `ENOVERSIONS` (npm) or "No matching distribution found" (pip).
 
-When only *some* versions are blocked, the proxy still returns a **200 OK** with the filtered response and an `X-Curation-Policy-Notice` header indicating how many versions were removed.
+When only _some_ versions are blocked, the proxy still returns a **200 OK** with the filtered response and an `X-Curation-Policy-Notice` header indicating how many versions were removed.
 
 **Cached 403 responses** are stored in the in-memory cache with the same TTL as normal responses, so repeated requests for blocked packages are served from cache.
 
 ---
 
-## 7. Sequence Diagram — PyPI Package Install (Topology A)
+## 8. Sequence Diagram — PyPI Package Install (Topology A)
 
 `pip install requests` with age filter of 7 days. Three versions exist: two old enough, one too new.
 
@@ -322,7 +383,7 @@ sequenceDiagram
 
 ---
 
-## 8. Sequence Diagram — PyPI Package Install (Topology B via Enterprise Registry)
+## 9. Sequence Diagram — PyPI Package Install (Topology B via Enterprise Registry)
 
 Same `pip install requests` but the enterprise registry is in the middle.
 
@@ -361,7 +422,7 @@ sequenceDiagram
 
 ---
 
-## 9. Sequence Diagram — npm Package Install (Topology A)
+## 10. Sequence Diagram — npm Package Install (Topology A)
 
 `npm install lodash`. Age filter 30 days. One version too new.
 
@@ -404,7 +465,7 @@ sequenceDiagram
 
 ---
 
-## 10. Sequence Diagram — Typosquatting Detection
+## 11. Sequence Diagram — Typosquatting Detection
 
 An attacker publishes `reqvests` (edit distance 1 from `requests`). A developer mistypes the package name.
 
@@ -427,7 +488,7 @@ sequenceDiagram
 
 ---
 
-## 11. Sequence Diagram — Dynamic Log Level via Admin API
+## 12. Sequence Diagram — Dynamic Log Level via Admin API
 
 Operator changes the log level at runtime without restarting the proxy.
 
@@ -449,7 +510,7 @@ sequenceDiagram
 
 ---
 
-## 12. Sequence Diagram — Cache Behaviour (HIT path)
+## 13. Sequence Diagram — Cache Behaviour (HIT path)
 
 Second request for the same package within TTL.
 
@@ -480,7 +541,7 @@ sequenceDiagram
 
 ---
 
-## 13. Sequence Diagram — Upstream Error Handling
+## 14. Sequence Diagram — Upstream Error Handling
 
 The upstream registry returns a 503. The proxy fails gracefully.
 
@@ -504,7 +565,35 @@ sequenceDiagram
 
 ---
 
-## 14. Deployment — Kubernetes (Single Ecosystem)
+## 15. Sequence Diagram — VS Code Gallery Extension Search
+
+`VS Code` searches for an extension. One result matches a deny rule and is removed from the response before the editor sees it.
+
+```mermaid
+sequenceDiagram
+    participant vscode as VS Code / VSCodium\n(product.json override)
+    participant proxy as vsx-bulwark proxy
+    participant engine as Rule Engine
+    participant openvsx as open-vsx.org
+
+    vscode->>proxy: POST /vscode/gallery/extensionquery\n{"filters":[{"criteria":[{"filterType":"8","value":"yaml"}]}]}
+    proxy->>openvsx: POST /vscode/gallery/extensionquery (forwarded)
+    openvsx-->>proxy: 200 JSON {"results":[{"extensions":[redhat.vscode-yaml, evil.yaml-helper]}]}
+
+    proxy->>engine: EvaluatePackage("redhat.vscode-yaml")
+    engine-->>proxy: {Allow: true}
+    proxy->>engine: EvaluatePackage("evil.yaml-helper")
+    engine-->>proxy: {Allow: false, Reason: "package matches deny list"}
+
+    proxy->>proxy: Remove evil.yaml-helper from results
+    proxy-->>vscode: 200 JSON {results filtered}\nX-Curation-Policy-Notice: 1 extension(s) filtered by policy
+
+    Note over vscode: Editor shows only allowed extensions
+```
+
+---
+
+## 16. Deployment — Kubernetes (Single Ecosystem)
 
 Standard Kubernetes deployment for `pypi-bulwark` in a dedicated namespace.
 
@@ -552,7 +641,7 @@ flowchart TB
 
 ---
 
-## 15. Data Flow — Rule Evaluation Priority Order
+## 17. Data Flow — Rule Evaluation Priority Order
 
 The rule engine evaluates rules in strict priority order. The first matching rule wins.
 
@@ -619,7 +708,7 @@ flowchart TD
 
 ---
 
-## 16. Component Interaction — Live E2E Test Stack (Topology A)
+## 18. Component Interaction — Live E2E Test Stack (Topology A)
 
 The E2E test suite compiles the proxy binaries, starts them as child processes, and sends real HTTP
 requests to public package registries. **No mocks are used.** Tests are gated by `//go:build e2e`
@@ -638,31 +727,35 @@ flowchart TB
         PA["pypi-bulwark :18100\nupstream=https://pypi.org\nrules: allow all (age=0)"]
         NA["npm-bulwark :18101\nupstream=https://registry.npmjs.org\nrules: allow all (age=0)"]
         MA["maven-bulwark :18102\nupstream=https://repo1.maven.org/maven2\nrules: allow all (age=0)"]
+        VA["vsx-bulwark :18103\nupstream=https://open-vsx.org\nrules: allow all (age=0)"]
     end
 
     subgraph Public Registries (real internet)
         PR["pypi.org\nPyPI Simple Index + Metadata API"]
         NR["registry.npmjs.org\nnpm packument API"]
         MR["repo1.maven.org/maven2\nMaven Central"]
+        VR["open-vsx.org\nOpen VSX API"]
     end
 
     TM -->|HTTP :18100| PA
     TM -->|HTTP :18101| NA
     TM -->|HTTP :18102| MA
+    TM -->|HTTP :18103| VA
     PA -->|HTTPS| PR
     NA -->|HTTPS| NR
     MA -->|HTTPS| MR
+    VA -->|HTTPS| VR
 
     style TM fill:#2563eb,color:#fff
     style PA fill:#2563eb,color:#fff
     style NA fill:#2563eb,color:#fff
     style MA fill:#2563eb,color:#fff
+    style VA fill:#2563eb,color:#fff
     style PR fill:#16a34a,color:#fff
     style NR fill:#16a34a,color:#fff
     style MR fill:#16a34a,color:#fff
+    style VR fill:#16a34a,color:#fff
 ```
-
-**Resilience rules:**
 
 - Each test calls `t.Skip` if the upstream is unreachable (DNS failure, timeout) — never fails CI on transient outage.
 - Stable, ancient packages are used (published ≥ 3 years ago) so age-filter and block rules can be exercised predictably.
@@ -684,7 +777,7 @@ flowchart TB
 
 ---
 
-## 16.1 Docker-Based E2E Tests (Real Clients, Multi-Rule Configs)
+## 18.1 Docker-Based E2E Tests (Real Clients, Multi-Rule Configs)
 
 In addition to the Go-based live E2E tests, the `e2e/docker/` directory contains Docker Compose-based integration tests that run real package manager clients through the curation proxies in containers. The test runner (`run.sh`) executes phases one at a time: each phase starts a single proxy container with a specific config, runs the corresponding test client container, then tears down before moving to the next phase.
 
@@ -693,14 +786,15 @@ Each ecosystem includes a **real-life** configuration where **all rules are acti
 - **npm** (`npm-real-life.yaml`): trusted scopes (`@types/*`, `@babel/*`), install scripts deny (esbuild exempted), 7-day age, pre-release block, explicit deny (event-stream), canary/nightly version patterns.
 - **PyPI** (`pypi-real-life.yaml`): trusted packages (setuptools, pip, wheel), 7-day age, pre-release block, explicit deny (python3-dateutil), dev/alpha/beta version patterns.
 - **Maven** (`maven-real-life.yaml`): trusted group (`org/apache/commons:*`, `commons-io:*`), 7-day age, pre-release block, SNAPSHOT block, explicit deny (junit:junit), milestone/RC version patterns.
+- **VSX** (`vsx-real-life.yaml`): trusted publishers (`ms-python.*`, `ms-vscode.*`, `redhat.*`), 7-day age, pre-release block, explicit deny (malicious extensions), canary/insider version patterns.
 
-**Total Docker E2E test count:** npm 33, PyPI 27, Maven 30 (90 tests across all phases).
+**Total Docker E2E test count:** npm 33, PyPI 27, Maven 30, VSX 13 (103 tests across all phases).
 
 See `e2e/docker/README.md` for the full test matrix.
 
 ---
 
-## 17. Security Threat Model
+## 19. Security Threat Model
 
 ```mermaid
 flowchart LR
@@ -747,7 +841,7 @@ flowchart LR
 
 ---
 
-## 18. Configuration Schema — Topology Selection
+## 20. Configuration Schema — Topology Selection
 
 Both topologies are selected by changing a single configuration key. The same binary, same rule engine, same everything.
 
@@ -770,7 +864,7 @@ flowchart LR
 
 ---
 
-## 19. One-Click Installer Architecture
+## 21. One-Click Installer Architecture
 
 Each proxy binary embeds its `config-best-practices.yaml` via Go's `//go:embed` directive. The shared `common/installer` package provides platform-aware setup and uninstall logic.
 
@@ -815,6 +909,7 @@ flowchart TD
     K -->|npm| L["Deferred to ActivateServices"]
     K -->|pypi| M["Write pip.conf / pip.ini"]
     K -->|maven| N["Write settings.xml\n(backup existing)"]
+    K -->|vsx| NA["Write product.json\nto user-data dirs\n(VSCodium, Code OSS)"]
     J --> O{"OS?"}
     O -->|macOS| P["Write LaunchAgent plist"]
     O -->|Linux| Q["Write systemd user service"]
@@ -834,22 +929,36 @@ flowchart TD
 ├── bin/
 │   ├── npm-bulwark          # (or .exe on Windows)
 │   ├── pypi-bulwark
-│   └── maven-bulwark
+│   ├── maven-bulwark
+│   └── vsx-bulwark
 ├── npm-bulwark/
 │   └── config.yaml           # Editable rules config
 ├── pypi-bulwark/
 │   └── config.yaml
-└── maven-bulwark/
+├── maven-bulwark/
+│   └── config.yaml
+└── vsx-bulwark/
     └── config.yaml
 ```
 
+**VSX additionally writes `product.json` to editor user-data directories (and on Windows also to VS Code installation directories):**
+
+| Editor           | Linux                        | macOS                                            | Windows (user-data)          | Windows (install dir, patched in-place)                               |
+| ---------------- | ---------------------------- | ------------------------------------------------ | ---------------------------- | --------------------------------------------------------------------- |
+| VS Code          | `~/.config/Code/`            | `~/Library/Application Support/Code/`            | `%APPDATA%\Code\`            | `%LOCALAPPDATA%\Programs\Microsoft VS Code\*\resources\app\` (glob)   |
+| VS Code Insiders | `~/.config/Code - Insiders/` | `~/Library/Application Support/Code - Insiders/` | `%APPDATA%\Code - Insiders\` | `%LOCALAPPDATA%\Programs\Microsoft VS Code Insiders\*\resources\app\` |
+| VSCodium         | `~/.config/VSCodium/`        | `~/Library/Application Support/VSCodium/`        | `%APPDATA%\VSCodium\`        | —                                                                     |
+| Code - OSS       | `~/.config/Code - OSS/`      | `~/Library/Application Support/Code - OSS/`      | `%APPDATA%\Code - OSS\`      | —                                                                     |
+
+The existing `product.json` (if any) is backed up as `product.json.bulwark-backup`. Uninstall restores from backup.
+
 ### Platform-Specific Autostart
 
-| OS | Mechanism | File Location |
-|----|-----------|---------------|
-| macOS | LaunchAgent | `~/Library/LaunchAgents/com.bulwark.<eco>.plist` |
-| Linux | systemd user service | `~/.config/systemd/user/bulwark-<eco>.service` |
-| Windows | Startup batch file | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\bulwark-<eco>.bat` |
+| OS      | Mechanism            | File Location                                                               |
+| ------- | -------------------- | --------------------------------------------------------------------------- |
+| macOS   | LaunchAgent          | `~/Library/LaunchAgents/com.bulwark.<eco>.plist`                            |
+| Linux   | systemd user service | `~/.config/systemd/user/bulwark-<eco>.service`                              |
+| Windows | Startup batch file   | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\bulwark-<eco>.bat` |
 
 ### Design Decisions
 
@@ -860,3 +969,5 @@ flowchart TD
 - **`goos` parameter** on all file-system functions: enables cross-platform unit testing without mocking `runtime.GOOS`.
 - **Separation of `SetupFiles` vs `ActivateServices`**: file-only operations are fully unit-testable with `t.TempDir()`; external commands (`launchctl`, `systemctl`, `npm`) are isolated with documented coverage exemptions.
 - **Maven backup/restore**: existing `settings.xml` is backed up to `settings.xml.bulwark-backup` on setup and restored on uninstall.
+- **VSX product.json patching**: On Linux and macOS, a fresh overlay file is written to the editor user-data directory (`~/.config/Code/product.json` etc.) — these survive editor updates. On Windows, Microsoft VS Code reads `product.json` from its **installation directory** not the user-data folder, so `-setup` also merges the `extensionsGallery` key into `%LOCALAPPDATA%\Programs\Microsoft VS Code\*\resources\app\product.json` using `filepath.Glob` to handle Squirrel-versioned sub-directories. The in-place merge preserves all other product fields. Backups are written only on first setup; `-uninstall` restores from backup.
+- **Auto-repair after VS Code updates (Windows)**: The Squirrel updater creates a new versioned sub-directory on each VS Code update, which replaces the previously patched `product.json` with a fresh one. `VsxRepairInstallDirs` is called at every proxy startup — it re-reads each candidate installation dir, compares the `extensionsGallery.serviceUrl`, and silently re-patches any file that no longer points at the proxy. This makes protection fully automatic: the proxy self-heals on the next OS login after a VS Code update without any user intervention. Existing backups are never overwritten, so `-uninstall` always restores to the state before Bulwark was first installed.

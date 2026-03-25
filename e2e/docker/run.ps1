@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Run Docker-based e2e tests in phases (Windows PowerShell).
-# Usage: .\run.ps1 [-PythonOnly] [-NodeOnly] [-JavaOnly] [-CleanupImages] [-CleanupBuilderCache]
+# Usage: .\run.ps1 [-PythonOnly] [-NodeOnly] [-JavaOnly] [-VsxOnly] [-CleanupImages] [-CleanupBuilderCache]
 
 param(
     [switch]$PythonOnly,
     [switch]$NodeOnly,
     [switch]$JavaOnly,
+    [switch]$VsxOnly,
     [switch]$CleanupImages,
     [switch]$CleanupBuilderCache
 )
@@ -19,6 +20,7 @@ $argsList = @()
 if ($PythonOnly) { $argsList += "--python-only" }
 elseif ($NodeOnly) { $argsList += "--node-only" }
 elseif ($JavaOnly) { $argsList += "--java-only" }
+elseif ($VsxOnly) { $argsList += "--vsx-only" }
 
 if ($CleanupImages) { $argsList += "--cleanup-images" }
 if ($CleanupBuilderCache) { $argsList += "--cleanup-builder-cache" }
