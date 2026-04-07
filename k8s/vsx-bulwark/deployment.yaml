@@ -1,0 +1,73 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vsx-bulwark
+  labels:
+    app: vsx-bulwark
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vsx-bulwark
+  template:
+    metadata:
+      labels:
+        app: vsx-bulwark
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: vsx-bulwark
+          image: ghcr.io/Bulwark/vsx-bulwark:latest
+          imagePullPolicy: IfNotPresent
+          args: ["-config", "/etc/bulwark/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 18003
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "18003"
+            - name: BULWARK_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vsx-bulwark-auth
+                  key: token
+                  optional: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/bulwark
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: config
+          configMap:
+            name: vsx-bulwark-config

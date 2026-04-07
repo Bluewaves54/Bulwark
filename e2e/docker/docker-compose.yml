@@ -369,6 +369,102 @@ services:
     networks:
       - bulwark-e2e
 
+  # ─── VSX curation proxies ───────────────────────────────────────────────────
+
+  vsx-proxy:
+    build:
+      context: ../..
+      dockerfile: vsx-bulwark/Dockerfile
+    volumes:
+      - ./configs/vsx-allow-all.yaml:/config.yaml:ro
+    networks:
+      - bulwark-e2e
+
+  vsx-proxy-block-prerelease:
+    build:
+      context: ../..
+      dockerfile: vsx-bulwark/Dockerfile
+    volumes:
+      - ./configs/vsx-block-prerelease.yaml:/config.yaml:ro
+    networks:
+      - bulwark-e2e
+
+  vsx-proxy-block-prerelease-pkg:
+    build:
+      context: ../..
+      dockerfile: vsx-bulwark/Dockerfile
+    volumes:
+      - ./configs/vsx-block-prerelease-pkg.yaml:/config.yaml:ro
+    networks:
+      - bulwark-e2e
+
+  vsx-proxy-explicit-deny:
+    build:
+      context: ../..
+      dockerfile: vsx-bulwark/Dockerfile
+    volumes:
+      - ./configs/vsx-explicit-deny.yaml:/config.yaml:ro
+    networks:
+      - bulwark-e2e
+
+  vsx-proxy-global-defaults:
+    build:
+      context: ../..
+      dockerfile: vsx-bulwark/Dockerfile
+    volumes:
+      - ./configs/vsx-global-defaults.yaml:/config.yaml:ro
+    networks:
+      - bulwark-e2e
+
+  vsx-proxy-real-life:
+    build:
+      context: "../.."
+      dockerfile: vsx-bulwark/Dockerfile
+    volumes:
+      - ./configs/vsx-real-life.yaml:/config.yaml:ro
+    networks:
+      - bulwark-e2e
+
+  vsx-proxy-best-practices:
+    build:
+      context: "../.."
+      dockerfile: vsx-bulwark/Dockerfile
+    volumes:
+      - ../../vsx-bulwark/config-best-practices.yaml:/config.yaml:ro
+    networks:
+      - bulwark-e2e
+
+  # ─── VSX test client ────────────────────────────────────────────────────────
+
+  test-vsx:
+    build:
+      context: ./clients/vsx
+    depends_on:
+      vsx-proxy:
+        condition: service_started
+      vsx-proxy-block-prerelease:
+        condition: service_started
+      vsx-proxy-block-prerelease-pkg:
+        condition: service_started
+      vsx-proxy-explicit-deny:
+        condition: service_started
+      vsx-proxy-global-defaults:
+        condition: service_started
+      vsx-proxy-real-life:
+        condition: service_started
+      vsx-proxy-best-practices:
+        condition: service_started
+    environment:
+      - VSX_PROXY_URL=http://vsx-proxy:18003
+      - VSX_PROXY_PRERELEASE_URL=http://vsx-proxy-block-prerelease:18003
+      - VSX_PROXY_PRERELEASE_PKG_URL=http://vsx-proxy-block-prerelease-pkg:18003
+      - VSX_PROXY_DENY_URL=http://vsx-proxy-explicit-deny:18003
+      - VSX_PROXY_DEFAULTS_URL=http://vsx-proxy-global-defaults:18003
+      - VSX_PROXY_REAL_LIFE_URL=http://vsx-proxy-real-life:18003
+      - VSX_PROXY_BEST_PRACTICES_URL=http://vsx-proxy-best-practices:18003
+    networks:
+      - bulwark-e2e
+
 networks:
   bulwark-e2e:
     driver: bridge

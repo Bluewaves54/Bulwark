@@ -11,14 +11,27 @@ dist/
 coverage.out
 cov*.out
 *.test
+common.out
 
 # OS-generated
 .DS_Store
 Thumbs.db
+nul
+*/nul
 
 # Local IDE/workstation artifacts
 .vscode/
 *.stackdump
+
+# Local module build outputs
+/maven-bulwark/maven-bulwark
+/npm-bulwark/npm-bulwark
+/pypi-bulwark/pypi-bulwark
+/vsx-bulwark/vsx-bulwark
+/common/installer.out
+
+# Runtime logs
+*.log
 
 # Local ad-hoc helper scripts
 e2e/docker/start-adhoc-and-test.cmd

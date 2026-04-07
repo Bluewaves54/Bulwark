@@ -42,6 +42,10 @@ type VersionMeta struct {
 	HasInstallScripts bool
 	// License is the SPDX license identifier declared for this version. Empty skips licence checks.
 	License string
+	// PreRelease is set by registries that provide an explicit pre-release flag
+	// (e.g. Open VSX, Microsoft Marketplace). When true, the version is treated
+	// as pre-release regardless of the version string.
+	PreRelease bool
 }
 
 // PackageMeta carries package-level metadata.
@@ -310,7 +314,7 @@ func (e *RuleEngine) evalPackageRules(pkg PackageMeta, ver VersionMeta) (FilterD
 
 // evalVersionChecks evaluates the version-level policy checks within a single rule.
 func (e *RuleEngine) evalVersionChecks(r *config.PackageRule, pkg PackageMeta, ver VersionMeta) (FilterDecision, bool) {
-	if r.BlockPreRelease && e.isPreRelease(ver.Version) {
+	if r.BlockPreRelease && (ver.PreRelease || e.isPreRelease(ver.Version)) {
 		return e.deny(r, reasonPreRelease), true
 	}
 	if r.BlockSnapshots && IsSnapshot(ver.Version) {
@@ -373,7 +377,7 @@ func (e *RuleEngine) evalVersionPatterns(ver VersionMeta) (FilterDecision, bool)
 // evalGlobalDefaults applies global fallback checks that remain after
 // rule-specific evaluation.
 func (e *RuleEngine) evalGlobalDefaults(ver VersionMeta, bypassAge bool) FilterDecision {
-	if e.defaults.BlockPreReleases && e.isPreRelease(ver.Version) {
+	if e.defaults.BlockPreReleases && (ver.PreRelease || e.isPreRelease(ver.Version)) {
 		return e.denyDefault(reasonPreRelease)
 	}
 	if !bypassAge && e.defaults.MinPackageAgeDays > 0 && !ver.PublishedAt.IsZero() {
@@ -417,7 +421,11 @@ func (e *RuleEngine) checkInstallScriptsEnabled(pkg string) *FilterDecision {
 }
 
 // deny builds a deny (or dry-run allow) decision for a named rule.
-func (e *RuleEngine) deny(r *config.PackageRule, reason string) FilterDecision {
+func (e *RuleEngine) deny(r *config.PackageRule, fallbackReason string) FilterDecision {
+	reason := r.Reason
+	if reason == "" {
+		reason = fallbackReason
+	}
 	if e.dryRun {
 		e.logger.Warn("dry_run: would deny",
 			slog.String("rule", r.Name),

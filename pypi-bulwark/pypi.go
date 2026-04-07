@@ -51,6 +51,9 @@ func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
 	}
 	resp, err := s.upstream.Do(req)
 	if err != nil || resp.StatusCode >= 500 {
+		if resp != nil {
+			resp.Body.Close()
+		}
 		http.Error(w, `{"status":"error"}`, http.StatusServiceUnavailable)
 		return
 	}

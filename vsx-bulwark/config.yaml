@@ -1,0 +1,68 @@
+# VSX Bulwark configuration — VS Code extension registry proxy
+
+server:
+  port: 18003
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+  # TLS certificate and key for HTTPS. Required for VS Code's Content Security
+  # Policy which blocks plain HTTP connections from the extension gallery UI.
+  # Generated automatically by -setup; override for corporate deployments.
+  # tls_cert_file: ""
+  # tls_key_file: ""
+
+upstream:
+  # Upstream registry. Configured automatically by -setup based on the VS Code
+  # variant installed on this machine.  Override manually if needed:
+  #
+  #   Microsoft VS Code / VS Code Insiders:
+  #     url: "https://marketplace.visualstudio.com"
+  #     registry_type: "marketplace"
+  #
+  #   VSCodium / Code - OSS (default when no variant is detected):
+  #     url: "https://open-vsx.org"
+  #     registry_type: "openvsx"
+  url: "https://open-vsx.org"
+  registry_type: "openvsx"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 300
+  max_size_mb: 256 # reserved for future use; not yet enforced
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+  # file_path: "/var/log/bulwark/vsx.log"  # optional; logs also written to disk
+
+policy:
+  dry_run: false
+  # fail_mode controls behaviour when extension metadata cannot be parsed or
+  # filtered by the policy engine.
+  # "open"  (default) — passes the raw upstream response through with a warning.
+  # "closed"           — returns 502 Bad Gateway to block uninspected extensions.
+  fail_mode: "open"
+
+  # trusted_packages lists extension IDs (namespace.name) that bypass ALL rule
+  # evaluation. Use for well-known extensions maintained by trusted publishers.
+  # Supports trailing wildcard: "ms-python.*", "redhat.*".
+  trusted_packages: []
+
+  rules:
+    - name: "block-pre-release"
+      action: "deny"
+      block_pre_release: true
+      reason: "pre-release extension versions are not permitted"
+
+    - name: "minimum-age"
+      action: "deny"
+      min_package_age_days: 7
+      reason: "extension must be at least 7 days old"

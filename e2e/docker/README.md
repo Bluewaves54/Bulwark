@@ -7,28 +7,28 @@ request path from client → proxy → upstream registry and back.
 The suite covers every rule type across all three ecosystems, with both a **deny path** (rule fires and
 blocks the request) and a **pass path** (rule allows the request or does not apply):
 
-| Rule                                         | PyPI | npm | Maven |
-| -------------------------------------------- | :--: | :-: | :---: |
-| `allow-all` baseline                         |  ✓   |  ✓  |   ✓   |
-| `min_package_age_days` deny (unpinned/range) |  ✓   |  ✓  |   ✓   |
-| `min_package_age_days` pass (exact pin)      |  ✓   |  ✓  |   ✓   |
-| `pinned_versions` bypass age                 |  ✓   |  ✓  |   ✓   |
-| `block_pre_release` deny                     |  ✓   |  ✓  |   ✓   |
-| `block_pre_release` pass (stable)            |  ✓   |  ✓  |   ✓   |
-| `block_snapshots` deny                       |  —   |  —  |   ✓   |
-| `block_snapshots` pass (stable)              |  —   |  —  |   ✓   |
-| `explicit deny` (action: deny) deny          |  ✓   |  ✓  |   ✓   |
-| `explicit deny` pass (unblocked package)     |  ✓   |  ✓  |   ✓   |
-| `global defaults` deny (no-rule package)     |  ✓   |  ✓  |   ✓   |
-| `bypass_age_filter` pass (exempt package)    |  ✓   |  ✓  |   ✓   |
-| `version_patterns` deny (regex match)        |  ✓   |  ✓  |   ✓   |
-| `version_patterns` pass (no match)           |  ✓   |  ✓  |   ✓   |
-| `install_scripts` deny (has postinstall)     |  —   |  ✓  |   —   |
-| `install_scripts` pass (no scripts)          |  —   |  ✓  |   —   |
-| `trusted_packages` pass (trusted scope)      |  —   |  ✓  |   —   |
-| `trusted_packages` deny (untrusted package)  |  —   |  ✓  |   —   |
-| **real-life** multi-rule pass (combined)     |  ✓   |  ✓  |   ✓   |
-| **real-life** multi-rule deny (combined)     |  ✓   |  ✓  |   ✓   |
+| Rule                                         | PyPI | npm | Maven | VSX |
+| -------------------------------------------- | :--: | :-: | :---: | :-: |
+| `allow-all` baseline                         |  ✓   |  ✓  |   ✓   |  ✓  |
+| `min_package_age_days` deny (unpinned/range) |  ✓   |  ✓  |   ✓   |  —  |
+| `min_package_age_days` pass (exact pin)      |  ✓   |  ✓  |   ✓   |  —  |
+| `pinned_versions` bypass age                 |  ✓   |  ✓  |   ✓   |  —  |
+| `block_pre_release` deny                     |  ✓   |  ✓  |   ✓   |  ✓  |
+| `block_pre_release` pass (stable)            |  ✓   |  ✓  |   ✓   |  ✓  |
+| `block_snapshots` deny                       |  —   |  —  |   ✓   |  —  |
+| `block_snapshots` pass (stable)              |  —   |  —  |   ✓   |  —  |
+| `explicit deny` (action: deny) deny          |  ✓   |  ✓  |   ✓   |  ✓  |
+| `explicit deny` pass (unblocked package)     |  ✓   |  ✓  |   ✓   |  ✓  |
+| `global defaults` deny (no-rule package)     |  ✓   |  ✓  |   ✓   |  ✓  |
+| `bypass_age_filter` pass (exempt package)    |  ✓   |  ✓  |   ✓   |  —  |
+| `version_patterns` deny (regex match)        |  ✓   |  ✓  |   ✓   |  —  |
+| `version_patterns` pass (no match)           |  ✓   |  ✓  |   ✓   |  —  |
+| `install_scripts` deny (has postinstall)     |  —   |  ✓  |   —   |  —  |
+| `install_scripts` pass (no scripts)          |  —   |  ✓  |   —   |  —  |
+| `trusted_packages` pass (trusted scope)      |  —   |  ✓  |   —   |  ✓  |
+| `trusted_packages` deny (untrusted package)  |  —   |  ✓  |   —   |  –  |
+| **real-life** multi-rule pass (combined)     |  ✓   |  ✓  |   ✓   |  ✓  |
+| **real-life** multi-rule deny (combined)     |  ✓   |  ✓  |   ✓   |  ✓  |
 
 ## Prerequisites
 
@@ -67,6 +67,9 @@ cd e2e\docker && .\run.ps1 -CleanupImages
 
 # Java only (Maven, Gradle)
 ./run.sh --java-only
+
+# VSX only (curl-based extension tests)
+./run.sh --vsx-only
 ```
 
 ## Cleanup Behavior
@@ -198,6 +201,24 @@ cd e2e\docker && .\run.ps1 -CleanupImages
 | 28  | real-life: junit beta denied      | curl   | explicit deny+pre    | deny |
 | 29  | real-life: guava SNAPSHOT denied  | curl   | block_snapshots      | deny |
 | 30  | real-life: mockito RC pattern     | curl   | version_patterns     | deny |
+
+### VSX (test-vsx)
+
+| #   | Test                                | Client | Rule                | Path |
+| --- | ----------------------------------- | ------ | ------------------- | ---- |
+| 1   | extension metadata (redhat.java)    | curl   | baseline allow-all  | pass |
+| 2   | query search                        | curl   | baseline allow-all  | pass |
+| 3   | healthz + metrics                   | curl   | baseline allow-all  | pass |
+| 4   | explicit deny blocks extension      | curl   | action: deny        | deny |
+| 5   | explicit deny allows other          | curl   | action: deny        | pass |
+| 6   | block_pre_release deny rc           | curl   | block_pre_release   | deny |
+| 7   | block_pre_release allow stable      | curl   | block_pre_release   | pass |
+| 8   | block_pre_release pkg-level deny    | curl   | block_pre_release   | deny |
+| 9   | block_pre_release pkg-level allow   | curl   | block_pre_release   | pass |
+| 10  | global defaults deny no-rule        | curl   | global defaults+age | deny |
+| 11  | global defaults allow trusted       | curl   | global defaults     | pass |
+| 12  | real-life: trusted ms-python.python | curl   | trusted_packages    | pass |
+| 13  | real-life: deny malicious ext       | curl   | explicit deny       | deny |
 
 ## Cleanup
 

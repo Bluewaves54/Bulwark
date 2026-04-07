@@ -4,8 +4,14 @@ package installer
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -206,7 +212,7 @@ func TestPipConfigPaths(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, file := PipConfigPaths("/home/user", tc.goos)
-			if !strings.Contains(dir, tc.wantDir) {
+			if !strings.Contains(filepath.ToSlash(dir), tc.wantDir) {
 				t.Errorf("dir = %s, want containing %s", dir, tc.wantDir)
 			}
 			if !strings.HasSuffix(file, tc.wantExt) {
@@ -235,7 +241,7 @@ func TestAutostartDir(t *testing.T) {
 			if tc.want == "" && result != "" {
 				t.Errorf("expected empty, got %s", result)
 			}
-			if tc.want != "" && !strings.Contains(result, tc.want) {
+			if tc.want != "" && !strings.Contains(filepath.ToSlash(result), tc.want) {
 				t.Errorf("result = %s, want containing %s", result, tc.want)
 			}
 		})
@@ -762,8 +768,15 @@ func TestSetupFilesBadHome(t *testing.T) {
 	p := testProxyInfo()
 	var buf bytes.Buffer
 
-	// Use /dev/null as home — MkdirAll will fail.
-	err := SetupFiles(p, "/dev/null", exe, testDarwin, &buf)
+	// Create a regular file and use a path inside it as "home".
+	// MkdirAll cannot create a subdirectory of a regular file on any OS.
+	base := t.TempDir()
+	fileAsDir := filepath.Join(base, "notadir.txt")
+	if err := os.WriteFile(fileAsDir, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	badHome := filepath.Join(fileAsDir, "home")
+	err := SetupFiles(p, badHome, exe, testDarwin, &buf)
 	if err == nil {
 		t.Error("expected error for bad home directory")
 	}
@@ -1070,5 +1083,1663 @@ func TestWriteAutostartFileMkdirError(t *testing.T) {
 	writeAutostartFile(p, paths, home, testLinux, &buf)
 	if !strings.Contains(buf.String(), "[warn]") {
 		t.Errorf("expected warning, got: %s", buf.String())
+	}
+}
+
+// ─── VSX product.json setup ──────────────────────────────────────────────────
+
+func TestVsxConfigDirs(t *testing.T) {
+	home := "/home/user"
+	dirs := VsxConfigDirs(home, testLinux)
+	if len(dirs) != 4 {
+		t.Fatalf("expected 4 dirs, got %d", len(dirs))
+	}
+	if !strings.HasSuffix(dirs[0], "Code") {
+		t.Errorf("first dir should end with Code, got %s", dirs[0])
+	}
+	if !strings.Contains(dirs[1], "Code - Insiders") {
+		t.Errorf("second dir should be Code - Insiders, got %s", dirs[1])
+	}
+	if !strings.Contains(dirs[2], "VSCodium") {
+		t.Errorf("third dir should be VSCodium, got %s", dirs[2])
+	}
+	if !strings.Contains(dirs[3], "Code - OSS") {
+		t.Errorf("fourth dir should be Code - OSS, got %s", dirs[3])
+	}
+}
+
+func TestVsxConfigDirsWindows(t *testing.T) {
+	home := "/home/user"
+	dirs := VsxConfigDirs(home, testWindows)
+	for _, dir := range dirs {
+		if !strings.Contains(dir, "AppData") {
+			t.Errorf("Windows dir should use AppData, got %s", dir)
+		}
+	}
+}
+
+func TestVsxConfigDirsDarwin(t *testing.T) {
+	home := "/home/user"
+	dirs := VsxConfigDirs(home, testDarwin)
+	for _, dir := range dirs {
+		if !strings.Contains(dir, "Application Support") {
+			t.Errorf("macOS dir should use Application Support, got %s", dir)
+		}
+	}
+}
+
+func TestResolveVSCodeTargets(t *testing.T) {
+	home := t.TempDir()
+	codeDir := filepath.Join(home, ".config", "Code")
+	vscodiumDir := filepath.Join(home, ".config", "VSCodium")
+	for _, dir := range []string{codeDir, vscodiumDir} {
+		if err := os.MkdirAll(dir, dirPerm); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	targets := ResolveVSCodeTargets(home, testLinux)
+	if len(targets) != 2 {
+		t.Fatalf("expected 2 detected targets, got %d", len(targets))
+	}
+	if targets[0].Variant.Name != VariantMicrosoftCode.Name {
+		t.Errorf("first target = %s, want %s", targets[0].Variant.Name, VariantMicrosoftCode.Name)
+	}
+	if targets[1].Variant.Name != VariantVSCodium.Name {
+		t.Errorf("second target = %s, want %s", targets[1].Variant.Name, VariantVSCodium.Name)
+	}
+	if targets[0].ConfigDir != codeDir {
+		t.Errorf("code config dir = %s, want %s", targets[0].ConfigDir, codeDir)
+	}
+	if targets[1].ConfigDir != vscodiumDir {
+		t.Errorf("vscodium config dir = %s, want %s", targets[1].ConfigDir, vscodiumDir)
+	}
+}
+
+func TestResolveVSCodeTargetsWindowsInstallOnly(t *testing.T) {
+	home := t.TempDir()
+	installDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	if err := os.MkdirAll(installDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	targets := ResolveVSCodeTargets(home, testWindows)
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 detected target, got %d", len(targets))
+	}
+	if targets[0].Variant.Name != VariantMicrosoftCode.Name {
+		t.Errorf("variant = %s, want %s", targets[0].Variant.Name, VariantMicrosoftCode.Name)
+	}
+	if len(targets[0].InstallDirs) != 1 || targets[0].InstallDirs[0] != installDir {
+		t.Errorf("install dirs = %v, want [%s]", targets[0].InstallDirs, installDir)
+	}
+}
+
+func readVSXSetupStateForTest(t *testing.T, home string) vsxSetupState {
+	t.Helper()
+	data, err := os.ReadFile(vsxStatePath(home))
+	if err != nil {
+		t.Fatalf("reading VSX setup state: %v", err)
+	}
+	var state vsxSetupState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("unmarshalling VSX setup state: %v", err)
+	}
+	return state
+}
+
+func TestVsxGalleryProductJSON(t *testing.T) {
+	content := VsxGalleryProductJSON(18003)
+	for _, want := range []string{
+		"localhost:18003",
+		"_comment",
+		"_revert",
+		"extensionsGallery",
+		"serviceUrl",
+		"itemUrl",
+		"resourceUrlTemplate",
+		"extensionUrlTemplate",
+		"delete this file",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("product.json missing %q", want)
+		}
+	}
+}
+
+func TestWritePkgMgrConfigVsx(t *testing.T) {
+	home := t.TempDir()
+	p := ProxyInfo{Ecosystem: EcosystemVsx, Port: 18003}
+	var buf bytes.Buffer
+	writePkgMgrConfig(p, home, testLinux, &buf)
+	out := buf.String()
+	if !strings.Contains(out, "[ok]") {
+		t.Errorf("expected ok output, got: %s", out)
+	}
+
+	// Both editor dirs should have product.json.
+	for _, dir := range VsxConfigDirs(home, testLinux) {
+		data, err := os.ReadFile(filepath.Join(dir, "product.json"))
+		if err != nil {
+			t.Errorf("missing product.json in %s: %v", dir, err)
+			continue
+		}
+		if !strings.Contains(string(data), "localhost:18003") {
+			t.Errorf("product.json in %s missing proxy URL", dir)
+		}
+	}
+	state := readVSXSetupStateForTest(t, home)
+	if len(state.Targets) != 4 {
+		t.Errorf("expected 4 saved targets for fallback setup, got %d", len(state.Targets))
+	}
+}
+
+func TestWritePkgMgrConfigVsxDetectedTargetsOnly(t *testing.T) {
+	home := t.TempDir()
+	vscodiumDir := filepath.Join(home, ".config", "VSCodium")
+	if err := os.MkdirAll(vscodiumDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	p := ProxyInfo{Ecosystem: EcosystemVsx, Port: 18003}
+	var buf bytes.Buffer
+	writePkgMgrConfig(p, home, testLinux, &buf)
+
+	data, err := os.ReadFile(filepath.Join(vscodiumDir, "product.json"))
+	if err != nil {
+		t.Fatalf("reading VSCodium product.json: %v", err)
+	}
+	if !strings.Contains(string(data), "localhost:18003") {
+		t.Errorf("VSCodium product.json missing proxy URL: %s", string(data))
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "Code", "product.json")); !os.IsNotExist(err) {
+		t.Errorf("Code product.json should not be written when only VSCodium is detected")
+	}
+
+	state := readVSXSetupStateForTest(t, home)
+	if len(state.Targets) != 1 {
+		t.Fatalf("expected 1 saved target, got %d", len(state.Targets))
+	}
+	if state.Targets[0].Name != VariantVSCodium.Name {
+		t.Errorf("saved target = %s, want %s", state.Targets[0].Name, VariantVSCodium.Name)
+	}
+}
+
+func TestWritePkgMgrConfigVsxBacksUp(t *testing.T) {
+	home := t.TempDir()
+	dirs := VsxConfigDirs(home, testLinux)
+	origContent := `{"extensionsGallery":{"serviceUrl":"https://open-vsx.org/vscode/gallery"}}`
+
+	// Pre-create a product.json in the first editor dir.
+	os.MkdirAll(dirs[0], dirPerm)                                                      //nolint:errcheck
+	os.WriteFile(filepath.Join(dirs[0], "product.json"), []byte(origContent), cfgPerm) //nolint:errcheck
+
+	p := ProxyInfo{Ecosystem: EcosystemVsx, Port: 18003}
+	var buf bytes.Buffer
+	writePkgMgrConfig(p, home, testLinux, &buf)
+
+	// Backup must exist with original content.
+	backup, err := os.ReadFile(filepath.Join(dirs[0], "product.json.bulwark-backup"))
+	if err != nil {
+		t.Fatalf("backup missing: %v", err)
+	}
+	if string(backup) != origContent {
+		t.Errorf("backup content mismatch: got %s", string(backup))
+	}
+
+	// product.json must be the proxy config now.
+	data, _ := os.ReadFile(filepath.Join(dirs[0], "product.json"))
+	if !strings.Contains(string(data), "localhost:18003") {
+		t.Errorf("product.json not updated: %s", string(data))
+	}
+
+	if !strings.Contains(buf.String(), "backed up") {
+		t.Errorf("expected backup message, got: %s", buf.String())
+	}
+}
+
+func TestWritePkgMgrConfigVsxIdempotent(t *testing.T) {
+	home := t.TempDir()
+	p := ProxyInfo{Ecosystem: EcosystemVsx, Port: 18003}
+	var buf bytes.Buffer
+
+	// Write twice — second should overwrite cleanly.
+	writePkgMgrConfig(p, home, testLinux, &buf)
+	buf.Reset()
+	writePkgMgrConfig(p, home, testLinux, &buf)
+
+	for _, dir := range VsxConfigDirs(home, testLinux) {
+		data, err := os.ReadFile(filepath.Join(dir, "product.json"))
+		if err != nil {
+			t.Errorf("missing product.json in %s after second write", dir)
+			continue
+		}
+		if !strings.Contains(string(data), "localhost:18003") {
+			t.Errorf("product.json corrupted after second write")
+		}
+	}
+}
+
+func TestUninstallFilesVsxRestoresBackup(t *testing.T) {
+	home := t.TempDir()
+	dirs := VsxConfigDirs(home, testLinux)
+	origContent := `{"extensionsGallery":{"serviceUrl":"https://open-vsx.org/vscode/gallery"}}`
+
+	// Set up: write proxy config with a pre-existing backup.
+	for _, dir := range dirs {
+		os.MkdirAll(dir, dirPerm)                                                                     //nolint:errcheck
+		os.WriteFile(filepath.Join(dir, "product.json"), []byte("proxy config"), cfgPerm)             //nolint:errcheck
+		os.WriteFile(filepath.Join(dir, "product.json.bulwark-backup"), []byte(origContent), cfgPerm) //nolint:errcheck
+	}
+
+	ecoDir := filepath.Join(home, bulwarkDir, "vsx-bulwark")
+	os.MkdirAll(ecoDir, dirPerm) //nolint:errcheck
+
+	p := ProxyInfo{Ecosystem: EcosystemVsx, BinaryName: "vsx-bulwark", Port: 18003}
+	var buf bytes.Buffer
+	if err := UninstallFiles(p, home, testLinux, &buf); err != nil {
+		t.Fatalf("UninstallFiles: %v", err)
+	}
+
+	// product.json should be restored to original.
+	for _, dir := range dirs {
+		data, err := os.ReadFile(filepath.Join(dir, "product.json"))
+		if err != nil {
+			t.Errorf("product.json removed in %s, should be restored", dir)
+			continue
+		}
+		if string(data) != origContent {
+			t.Errorf("product.json not restored in %s: %s", dir, string(data))
+		}
+		// Backup should be cleaned up.
+		if _, err := os.Stat(filepath.Join(dir, "product.json.bulwark-backup")); !os.IsNotExist(err) {
+			t.Errorf("backup not cleaned up in %s", dir)
+		}
+	}
+	if !strings.Contains(buf.String(), "Restored") {
+		t.Errorf("expected restore message, got: %s", buf.String())
+	}
+}
+
+func TestUninstallFilesVsxNoBackup(t *testing.T) {
+	home := t.TempDir()
+	dirs := VsxConfigDirs(home, testLinux)
+
+	// Set up: proxy config with no backup.
+	for _, dir := range dirs {
+		os.MkdirAll(dir, dirPerm)                                                         //nolint:errcheck
+		os.WriteFile(filepath.Join(dir, "product.json"), []byte("proxy config"), cfgPerm) //nolint:errcheck
+	}
+
+	ecoDir := filepath.Join(home, bulwarkDir, "vsx-bulwark")
+	os.MkdirAll(ecoDir, dirPerm) //nolint:errcheck
+
+	p := ProxyInfo{Ecosystem: EcosystemVsx, BinaryName: "vsx-bulwark", Port: 18003}
+	var buf bytes.Buffer
+	UninstallFiles(p, home, testLinux, &buf) //nolint:errcheck
+
+	// product.json should be removed (no backup to restore from).
+	for _, dir := range dirs {
+		if _, err := os.Stat(filepath.Join(dir, "product.json")); !os.IsNotExist(err) {
+			t.Errorf("product.json should be removed in %s when no backup exists", dir)
+		}
+	}
+}
+
+func TestUninstallFilesVsxUsesSavedTargets(t *testing.T) {
+	home := t.TempDir()
+	vscodiumDir := filepath.Join(home, ".config", "VSCodium")
+	codeDir := filepath.Join(home, ".config", "Code")
+	for _, dir := range []string{vscodiumDir, codeDir} {
+		if err := os.MkdirAll(dir, dirPerm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(vscodiumDir, "product.json"), []byte("proxy config"), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(codeDir, "product.json"), []byte("leave me alone"), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveVSXSetupState(home, []VSCodeTarget{{
+		Variant:   VariantVSCodium,
+		ConfigDir: vscodiumDir,
+	}}); err != nil {
+		t.Fatalf("saveVSXSetupState: %v", err)
+	}
+
+	p := ProxyInfo{Ecosystem: EcosystemVsx, BinaryName: "vsx-bulwark", Port: 18003}
+	var buf bytes.Buffer
+	if err := UninstallFiles(p, home, testLinux, &buf); err != nil {
+		t.Fatalf("UninstallFiles: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vscodiumDir, "product.json")); !os.IsNotExist(err) {
+		t.Errorf("VSCodium product.json should be removed for saved target")
+	}
+	data, err := os.ReadFile(filepath.Join(codeDir, "product.json"))
+	if err != nil {
+		t.Fatalf("reading Code product.json: %v", err)
+	}
+	if string(data) != "leave me alone" {
+		t.Errorf("Code product.json should be untouched, got %q", string(data))
+	}
+	if _, err := os.Stat(vsxStatePath(home)); !os.IsNotExist(err) {
+		t.Errorf("VSX setup state should be removed during uninstall")
+	}
+}
+
+// ─── VsxInstallDirs (Windows install-dir patching) ───────────────────────────
+
+const (
+	testInstallProductJSON = `{"nameShort":"Visual Studio Code","version":"1.88.0","extensionsGallery":{"serviceUrl":"https://marketplace.visualstudio.com/_apis/public/gallery","itemUrl":"https://marketplace.visualstudio.com/items"}}`
+)
+
+func TestVsxInstallDirsNonWindows(t *testing.T) {
+	dirs := VsxInstallDirs("/home/user", testLinux)
+	if len(dirs) != 0 {
+		t.Errorf("expected nil/empty on Linux, got %v", dirs)
+	}
+	dirs = VsxInstallDirs("/home/user", testDarwin)
+	if len(dirs) != 0 {
+		t.Errorf("expected nil/empty on macOS, got %v", dirs)
+	}
+	dirs = VsxInstallDirs("/home/user", testFreeBSD)
+	if len(dirs) != 0 {
+		t.Errorf("expected nil/empty on FreeBSD, got %v", dirs)
+	}
+}
+
+func TestVsxInstallDirsWindowsStandardLayout(t *testing.T) {
+	home := t.TempDir()
+	// Create a standard flat layout: <install>/resources/app
+	stdDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	if err := os.MkdirAll(stdDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	dirs := VsxInstallDirs(home, testWindows)
+	found := false
+	for _, d := range dirs {
+		if d == stdDir {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("standard layout dir %s not found in %v", stdDir, dirs)
+	}
+}
+
+func TestVsxInstallDirsWindowsHashLayout(t *testing.T) {
+	home := t.TempDir()
+	// Create a Squirrel/hash layout: <install>/<hash>/resources/app
+	hashDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "ce099c1ed2", "resources", "app")
+	if err := os.MkdirAll(hashDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	dirs := VsxInstallDirs(home, testWindows)
+	found := false
+	for _, d := range dirs {
+		if d == hashDir {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("hash-layout dir %s not found in %v", hashDir, dirs)
+	}
+}
+
+func TestVsxInstallDirsWindowsEmpty(t *testing.T) {
+	// No VS Code installed — should return empty slice, not nil panic.
+	dirs := VsxInstallDirs(t.TempDir(), testWindows)
+	if len(dirs) != 0 {
+		t.Errorf("expected empty when VS Code not installed, got %v", dirs)
+	}
+}
+
+func TestMergeGalleryJSON(t *testing.T) {
+	patched, err := mergeGalleryJSON([]byte(testInstallProductJSON), 18003)
+	if err != nil {
+		t.Fatalf("mergeGalleryJSON: %v", err)
+	}
+	for _, want := range []string{
+		"localhost:18003",
+		"/vscode/gallery",
+		"/vscode/item",
+		"/api/{publisher}/{name}/{version}/file/{path}",
+		"/vscode/gallery/vscode/{publisher}/{name}/latest",
+		`"nameShort"`,
+		`"version"`,
+	} {
+		if !strings.Contains(string(patched), want) {
+			t.Errorf("merged JSON missing %q; got:\n%s", want, string(patched))
+		}
+	}
+	// Original marketplace URL must be gone.
+	if strings.Contains(string(patched), "marketplace.visualstudio.com") {
+		t.Errorf("marketplace URL still present after merge; got:\n%s", string(patched))
+	}
+}
+
+func TestMergeGalleryJSONInvalidInput(t *testing.T) {
+	_, err := mergeGalleryJSON([]byte("not json"), 18003)
+	if err == nil {
+		t.Error("expected error on invalid JSON input")
+	}
+}
+
+// TestMergeGalleryJSONPreservesExtraFields verifies that extra extensionsGallery
+// sub-fields (controlUrl, nlsBaseUrl, mcpUrl, etc.) are preserved after merge.
+func TestMergeGalleryJSONPreservesExtraFields(t *testing.T) {
+	const richProductJSON = `{
+  "nameShort": "Visual Studio Code",
+  "version": "1.111.0",
+  "extensionsGallery": {
+    "serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery",
+    "itemUrl": "https://marketplace.visualstudio.com/items",
+    "resourceUrlTemplate": "https://{publisher}.example.com/{publisher}/{name}/{version}/{path}",
+    "controlUrl": "https://main.vscode-cdn.net/extensions/marketplace.json",
+    "nlsBaseUrl": "https://www.vscode-unpkg.net/_lp/",
+    "mcpUrl": "https://main.vscode-cdn.net/mcp/servers.json",
+    "publisherUrl": "https://marketplace.visualstudio.com/publishers"
+  }
+}`
+	patched, err := mergeGalleryJSON([]byte(richProductJSON), 18003)
+	if err != nil {
+		t.Fatalf("mergeGalleryJSON: %v", err)
+	}
+	ps := string(patched)
+	for _, want := range []string{
+		"controlUrl",
+		"nlsBaseUrl",
+		"mcpUrl",
+		"publisherUrl",
+		"main.vscode-cdn.net",
+		"vscode-unpkg.net",
+		"localhost:18003",
+	} {
+		if !strings.Contains(ps, want) {
+			t.Errorf("merged JSON missing %q; got:\n%s", want, ps)
+		}
+	}
+	// The proxy-URL fields must point to the proxy. Other gallery fields
+	// that contain "marketplace.visualstudio.com" (e.g. publisherUrl) must be
+	// left intact. extensionUrlTemplate (VS Code 1.112+) is also redirected.
+	var doc map[string]interface{}
+	if err := json.Unmarshal(patched, &doc); err != nil {
+		t.Fatalf("unmarshalling patched JSON: %v", err)
+	}
+	gallery, _ := doc["extensionsGallery"].(map[string]interface{})
+	if gallery == nil {
+		t.Fatal("extensionsGallery missing from patched JSON")
+	}
+	for _, key := range []string{"serviceUrl", "itemUrl", "resourceUrlTemplate", "extensionUrlTemplate"} {
+		if v, _ := gallery[key].(string); !strings.Contains(v, "localhost:18003") {
+			t.Errorf("gallery.%s not pointing to proxy: %s", key, v)
+		}
+	}
+}
+
+// TestMergeGalleryJSONOverridesExtensionUrlTemplate verifies that an existing
+// extensionUrlTemplate field pointing to the VS Code CDN is overridden to point
+// to the proxy (VS Code 1.112+ scenario).
+func TestMergeGalleryJSONOverridesExtensionUrlTemplate(t *testing.T) {
+	const srcJSON = `{
+  "nameShort": "Visual Studio Code",
+  "version": "1.112.0",
+  "extensionsGallery": {
+    "serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery",
+    "extensionUrlTemplate": "https://www.vscode-unpkg.net/_gallery/{publisher}/{name}/latest"
+  }
+}`
+	patched, err := mergeGalleryJSON([]byte(srcJSON), 18003)
+	if err != nil {
+		t.Fatalf("mergeGalleryJSON: %v", err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(patched, &doc); err != nil {
+		t.Fatalf("unmarshalling patched JSON: %v", err)
+	}
+	gallery, _ := doc["extensionsGallery"].(map[string]interface{})
+	if gallery == nil {
+		t.Fatal("extensionsGallery missing")
+	}
+	tmpl, _ := gallery["extensionUrlTemplate"].(string)
+	if strings.Contains(tmpl, "vscode-unpkg.net") {
+		t.Errorf("extensionUrlTemplate still points to CDN after merge; got: %s", tmpl)
+	}
+	if !strings.Contains(tmpl, "localhost:18003") {
+		t.Errorf("extensionUrlTemplate does not point to proxy; got: %s", tmpl)
+	}
+}
+
+func TestPatchInstallProductJSONSkipsMissing(t *testing.T) {
+	var buf bytes.Buffer
+	// Should not panic or error when directory does not exist.
+	patchInstallProductJSON(filepath.Join(t.TempDir(), "nonexistent"), "https://localhost:18003", &buf)
+	if buf.Len() != 0 {
+		t.Errorf("expected no output for missing dir, got: %s", buf.String())
+	}
+}
+
+func TestPatchInstallProductJSONPatches(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "resources", "app")
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	cfgFile := filepath.Join(dir, "product.json")
+	if err := os.WriteFile(cfgFile, []byte(testInstallProductJSON), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	patchInstallProductJSON(dir, "https://localhost:18003", &buf)
+	out := buf.String()
+
+	if !strings.Contains(out, "[ok]") {
+		t.Errorf("expected ok output, got: %s", out)
+	}
+	if !strings.Contains(out, "backed up") {
+		t.Errorf("expected backup message, got: %s", out)
+	}
+
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("reading patched file: %v", err)
+	}
+	if !strings.Contains(string(data), "localhost:18003") {
+		t.Errorf("patched file missing proxy URL; got:\n%s", string(data))
+	}
+	// Original fields must be preserved.
+	if !strings.Contains(string(data), "nameShort") {
+		t.Errorf("original fields lost after patch; got:\n%s", string(data))
+	}
+
+	// Backup must exist with original content.
+	backup, err := os.ReadFile(cfgFile + ".bulwark-backup")
+	if err != nil {
+		t.Fatalf("backup missing: %v", err)
+	}
+	if string(backup) != testInstallProductJSON {
+		t.Errorf("backup content mismatch: got %s", string(backup))
+	}
+}
+
+func TestPatchInstallProductJSONIdempotentBackup(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "resources", "app")
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	cfgFile := filepath.Join(dir, "product.json")
+	if err := os.WriteFile(cfgFile, []byte(testInstallProductJSON), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	// First setup — creates backup.
+	patchInstallProductJSON(dir, "https://localhost:18003", &buf)
+	// Second setup — backup already exists, must not overwrite it with the
+	// already-patched content.
+	buf.Reset()
+	patchInstallProductJSON(dir, "https://localhost:18003", &buf)
+
+	// Backup should still contain the ORIGINAL marketplace URL, not the proxy URL.
+	backup, err := os.ReadFile(cfgFile + ".bulwark-backup")
+	if err != nil {
+		t.Fatalf("backup missing after second patch: %v", err)
+	}
+	if !strings.Contains(string(backup), "marketplace.visualstudio.com") {
+		t.Errorf("backup was overwritten with patched content on second setup: %s", string(backup))
+	}
+	// Second run should not emit a backup message (backup skipped).
+	if strings.Contains(buf.String(), "backed up") {
+		t.Errorf("should not emit backup message on second setup; got: %s", buf.String())
+	}
+}
+
+func TestRestoreInstallProductJSONSkipsMissing(t *testing.T) {
+	var buf bytes.Buffer
+	restoreInstallProductJSON(filepath.Join(t.TempDir(), "nonexistent"), &buf)
+	if buf.Len() != 0 {
+		t.Errorf("expected no output for missing dir, got: %s", buf.String())
+	}
+}
+
+func TestRestoreInstallProductJSONRestoresBackup(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "resources", "app")
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	cfgFile := filepath.Join(dir, "product.json")
+	backup := cfgFile + ".bulwark-backup"
+
+	// Simulate an already-patched state with a backup.
+	patchedContent := `{"extensionsGallery":{"serviceUrl":"http://localhost:18003/vscode/gallery"}}`
+	if err := os.WriteFile(cfgFile, []byte(patchedContent), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(backup, []byte(testInstallProductJSON), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	restoreInstallProductJSON(dir, &buf)
+
+	if !strings.Contains(buf.String(), "Restored") {
+		t.Errorf("expected Restored message, got: %s", buf.String())
+	}
+
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("product.json missing after restore: %v", err)
+	}
+	if string(data) != testInstallProductJSON {
+		t.Errorf("product.json not restored; got: %s", string(data))
+	}
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Errorf("backup not cleaned up after restore")
+	}
+}
+
+func TestPatchInstallProductJSONMissingFile(t *testing.T) {
+	// Directory exists but no product.json inside — should warn and return.
+	dir := t.TempDir()
+	var buf bytes.Buffer
+	patchInstallProductJSON(dir, "https://localhost:18003", &buf)
+	if !strings.Contains(buf.String(), "[warn]") {
+		t.Errorf("expected warn for missing product.json, got: %s", buf.String())
+	}
+}
+
+func TestRestoreUserDataProductJSONRestoresBackup(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "product.json")
+	backup := cfgFile + ".bulwark-backup"
+	origContent := `{"extensionsGallery":{"serviceUrl":"https://open-vsx.org/vscode/gallery"}}`
+
+	if err := os.WriteFile(cfgFile, []byte("proxy config"), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(backup, []byte(origContent), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	restoreUserDataProductJSON(dir, &buf)
+
+	if !strings.Contains(buf.String(), "Restored") {
+		t.Errorf("expected Restored message, got: %s", buf.String())
+	}
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("product.json missing after restore: %v", err)
+	}
+	if string(data) != origContent {
+		t.Errorf("content not restored: got %s", string(data))
+	}
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Errorf("backup not cleaned up")
+	}
+}
+
+func TestRestoreUserDataProductJSONNoBackup(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "product.json")
+	if err := os.WriteFile(cfgFile, []byte("proxy config"), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	restoreUserDataProductJSON(dir, &buf)
+
+	if _, err := os.Stat(cfgFile); !os.IsNotExist(err) {
+		t.Errorf("product.json should be removed when no backup exists")
+	}
+}
+
+func TestWritePkgMgrConfigVsxWindowsInstallDirs(t *testing.T) {
+	home := t.TempDir()
+	// Create a fake VS Code installation at the standard Windows path.
+	installDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	if err := os.MkdirAll(installDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "product.json"), []byte(testInstallProductJSON), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	p := ProxyInfo{Ecosystem: EcosystemVsx, Port: 18003}
+	var buf bytes.Buffer
+	writePkgMgrConfig(p, home, testWindows, &buf)
+	out := buf.String()
+
+	if !strings.Contains(out, "install dir") {
+		t.Errorf("expected install dir message, got: %s", out)
+	}
+
+	data, err := os.ReadFile(filepath.Join(installDir, "product.json"))
+	if err != nil {
+		t.Fatalf("reading install product.json: %v", err)
+	}
+	if !strings.Contains(string(data), "localhost:18003") {
+		t.Errorf("install dir product.json not patched; got:\n%s", string(data))
+	}
+}
+
+// TestWritePkgMgrConfigVsxWindowsUserDataPreservesGalleryFields verifies that
+// when setting up on Windows the user-data overlay product.json includes the
+// original extensionsGallery fields from the install dir (controlUrl, etc.),
+// not just the three proxy URLs. VS Code 1.95+ does a shallow-merge of the
+// user-data overlay so the overlay must carry all extensionsGallery fields.
+func TestWritePkgMgrConfigVsxWindowsUserDataPreservesGalleryFields(t *testing.T) {
+	const richInstallProductJSON = `{
+  "nameShort": "Visual Studio Code",
+  "version": "1.111.0",
+  "extensionsGallery": {
+    "serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery",
+    "itemUrl": "https://marketplace.visualstudio.com/items",
+    "controlUrl": "https://main.vscode-cdn.net/extensions/marketplace.json",
+    "nlsBaseUrl": "https://www.vscode-unpkg.net/_lp/",
+    "mcpUrl": "https://main.vscode-cdn.net/mcp/servers.json"
+  }
+}`
+	home := t.TempDir()
+	installDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	if err := os.MkdirAll(installDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "product.json"), []byte(richInstallProductJSON), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	p := ProxyInfo{Ecosystem: EcosystemVsx, Port: 18003}
+	var buf bytes.Buffer
+	writePkgMgrConfig(p, home, testWindows, &buf)
+
+	// The user-data overlay must contain the extra gallery fields.
+	userDataDir := filepath.Join(home, "AppData", "Roaming", "Code")
+	overlayData, err := os.ReadFile(filepath.Join(userDataDir, "product.json"))
+	if err != nil {
+		t.Fatalf("user-data overlay missing: %v", err)
+	}
+	overlayStr := string(overlayData)
+	for _, want := range []string{"controlUrl", "nlsBaseUrl", "mcpUrl", "localhost:18003"} {
+		if !strings.Contains(overlayStr, want) {
+			t.Errorf("user-data overlay missing %q; got:\n%s", want, overlayStr)
+		}
+	}
+	if strings.Contains(overlayStr, "marketplace.visualstudio.com") {
+		t.Errorf("original serviceUrl/itemUrl still in user-data overlay; got:\n%s", overlayStr)
+	}
+}
+
+func TestUninstallFilesVsxWindowsInstallDirs(t *testing.T) {
+	home := t.TempDir()
+	installDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	if err := os.MkdirAll(installDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	cfgFile := filepath.Join(installDir, "product.json")
+	backupFile := cfgFile + ".bulwark-backup"
+
+	patchedContent := `{"extensionsGallery":{"serviceUrl":"http://localhost:18003/vscode/gallery"}}`
+	if err := os.WriteFile(cfgFile, []byte(patchedContent), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(backupFile, []byte(testInstallProductJSON), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	ecoDir := filepath.Join(home, bulwarkDir, "vsx-bulwark")
+	if err := os.MkdirAll(ecoDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	p := ProxyInfo{Ecosystem: EcosystemVsx, BinaryName: "vsx-bulwark", Port: 18003}
+	var buf bytes.Buffer
+	if err := UninstallFiles(p, home, testWindows, &buf); err != nil {
+		t.Fatalf("UninstallFiles: %v", err)
+	}
+
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("product.json missing after uninstall: %v", err)
+	}
+	if string(data) != testInstallProductJSON {
+		t.Errorf("install dir product.json not restored; got: %s", string(data))
+	}
+	if _, err := os.Stat(backupFile); !os.IsNotExist(err) {
+		t.Errorf("backup not cleaned up after uninstall")
+	}
+}
+
+// ─── VsxRepairInstallDirs ─────────────────────────────────────────────────────
+
+func TestVsxRepairInstallDirsNonWindows(t *testing.T) {
+	// Should be a no-op on non-Windows.
+	var buf bytes.Buffer
+	VsxRepairInstallDirs(t.TempDir(), testLinux, 18003, &buf)
+	VsxRepairInstallDirs(t.TempDir(), testDarwin, 18003, &buf)
+	if buf.Len() != 0 {
+		t.Errorf("expected no output on non-Windows, got: %s", buf.String())
+	}
+}
+
+func TestVsxRepairInstallDirsAlreadyPatched(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	// Already patched — should skip without output.
+	already := `{"extensionsGallery":{"serviceUrl":"http://localhost:18003/vscode/gallery"}}`
+	if err := os.WriteFile(filepath.Join(dir, "product.json"), []byte(already), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	VsxRepairInstallDirs(home, testWindows, 18003, &buf)
+	if buf.Len() != 0 {
+		t.Errorf("expected no output when already patched, got: %s", buf.String())
+	}
+}
+
+func TestVsxRepairInstallDirsRepairsAfterUpdate(t *testing.T) {
+	home := t.TempDir()
+	// Simulate a VS Code update: new hash directory with fresh product.json.
+	newHashDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "newHash123", "resources", "app")
+	if err := os.MkdirAll(newHashDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	cfgFile := filepath.Join(newHashDir, "product.json")
+	// Fresh unpatched product.json as placed by the VS Code installer.
+	if err := os.WriteFile(cfgFile, []byte(testInstallProductJSON), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	VsxRepairInstallDirs(home, testWindows, 18003, &buf)
+	out := buf.String()
+
+	// Should have re-patched.
+	if !strings.Contains(out, "[ok]") {
+		t.Errorf("expected patch output after update, got: %s", out)
+	}
+
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("product.json missing after repair: %v", err)
+	}
+	if !strings.Contains(string(data), "localhost:18003") {
+		t.Errorf("product.json not patched after repair; got:\n%s", string(data))
+	}
+	// Backup should be the original unpatched content.
+	backup, err := os.ReadFile(cfgFile + ".bulwark-backup")
+	if err != nil {
+		t.Fatalf("backup missing after repair: %v", err)
+	}
+	if !strings.Contains(string(backup), "marketplace.visualstudio.com") {
+		t.Errorf("backup should contain original marketplace URL; got: %s", string(backup))
+	}
+}
+
+func TestVsxRepairInstallDirsUsesSavedTargets(t *testing.T) {
+	home := t.TempDir()
+	codeDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	insidersDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code Insiders", "resources", "app")
+	for _, dir := range []string{codeDir, insidersDir} {
+		if err := os.MkdirAll(dir, dirPerm); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "product.json"), []byte(testInstallProductJSON), cfgPerm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveVSXSetupState(home, []VSCodeTarget{{
+		Variant:     VariantMicrosoftInsiders,
+		ConfigDir:   filepath.Join(home, "AppData", "Roaming", VariantMicrosoftInsiders.Name),
+		InstallDirs: []string{insidersDir},
+	}}); err != nil {
+		t.Fatalf("saveVSXSetupState: %v", err)
+	}
+
+	var buf bytes.Buffer
+	VsxRepairInstallDirs(home, testWindows, 18003, &buf)
+
+	insidersData, err := os.ReadFile(filepath.Join(insidersDir, "product.json"))
+	if err != nil {
+		t.Fatalf("reading insiders product.json: %v", err)
+	}
+	if !strings.Contains(string(insidersData), "localhost:18003") {
+		t.Errorf("insiders product.json not repaired: %s", string(insidersData))
+	}
+	codeData, err := os.ReadFile(filepath.Join(codeDir, "product.json"))
+	if err != nil {
+		t.Fatalf("reading code product.json: %v", err)
+	}
+	if strings.Contains(string(codeData), "localhost:18003") {
+		t.Errorf("Code product.json should not be repaired when not present in saved state")
+	}
+}
+
+func TestVsxRepairInstallDirsSkipsRemovedDir(t *testing.T) {
+	home := t.TempDir()
+	// Old hash dir is gone (cleaned up by Squirrel) — no error expected.
+	var buf bytes.Buffer
+	VsxRepairInstallDirs(home, testWindows, 18003, &buf)
+	// Should be silent with no panics.
+	if buf.Len() != 0 {
+		t.Errorf("expected no output when no dirs exist, got: %s", buf.String())
+	}
+}
+
+// ─── VS Code variant detection ──────────────────────────────────────────────
+
+func TestDetectVSCodeVariantsNone(t *testing.T) {
+	home := t.TempDir()
+	variants := DetectVSCodeVariants(home, testLinux)
+	if len(variants) != 0 {
+		t.Errorf("expected no variants, got %d", len(variants))
+	}
+}
+
+func TestDetectVSCodeVariantsLinuxCode(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".config", "Code"), dirPerm)     //nolint:errcheck
+	os.MkdirAll(filepath.Join(home, ".config", "VSCodium"), dirPerm) //nolint:errcheck
+	variants := DetectVSCodeVariants(home, testLinux)
+	if len(variants) != 2 {
+		t.Fatalf("expected 2 variants, got %d", len(variants))
+	}
+	if variants[0].Name != "Code" {
+		t.Errorf("first variant should be Code, got %s", variants[0].Name)
+	}
+	if variants[1].Name != "VSCodium" {
+		t.Errorf("second variant should be VSCodium, got %s", variants[1].Name)
+	}
+}
+
+func TestDetectVSCodeVariantsWindowsInstallDir(t *testing.T) {
+	home := t.TempDir()
+	// No user-data dir, but the patchable install dir exists.
+	installDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	os.MkdirAll(installDir, dirPerm) //nolint:errcheck
+	variants := DetectVSCodeVariants(home, testWindows)
+	found := false
+	for _, v := range variants {
+		if v.Name == "Code" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected Code variant via install dir, got %v", variants)
+	}
+}
+
+func TestDetectVSCodeVariantsWindowsInsiders(t *testing.T) {
+	home := t.TempDir()
+	installDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code Insiders", "resources", "app")
+	os.MkdirAll(installDir, dirPerm) //nolint:errcheck
+	variants := DetectVSCodeVariants(home, testWindows)
+	found := false
+	for _, v := range variants {
+		if v.Name == "Code - Insiders" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected Code - Insiders variant via install dir, got %v", variants)
+	}
+}
+
+func TestDetectVSCodeVariantsDarwin(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, "Library", "Application Support", "Code - OSS"), dirPerm) //nolint:errcheck
+	variants := DetectVSCodeVariants(home, testDarwin)
+	if len(variants) != 1 {
+		t.Fatalf("expected 1 variant, got %d", len(variants))
+	}
+	if variants[0].Name != "Code - OSS" {
+		t.Errorf("expected Code - OSS, got %s", variants[0].Name)
+	}
+}
+
+func TestChooseVSCodeUpstreamMarketplace(t *testing.T) {
+	variants := []VSCodeVariant{VariantMicrosoftCode, VariantVSCodium}
+	url, regType := ChooseVSCodeUpstream(variants)
+	if regType != "marketplace" {
+		t.Errorf("expected marketplace, got %s", regType)
+	}
+	if url != "https://marketplace.visualstudio.com" {
+		t.Errorf("expected marketplace URL, got %s", url)
+	}
+}
+
+func TestChooseVSCodeUpstreamOpenVSX(t *testing.T) {
+	variants := []VSCodeVariant{VariantVSCodium, VariantCodeOSS}
+	url, regType := ChooseVSCodeUpstream(variants)
+	if regType != "openvsx" {
+		t.Errorf("expected openvsx, got %s", regType)
+	}
+	if url != "https://open-vsx.org" {
+		t.Errorf("expected Open VSX URL, got %s", url)
+	}
+}
+
+func TestChooseVSCodeUpstreamEmpty(t *testing.T) {
+	url, regType := ChooseVSCodeUpstream(nil)
+	if regType != "openvsx" {
+		t.Errorf("expected openvsx fallback, got %s", regType)
+	}
+	if url != "https://open-vsx.org" {
+		t.Errorf("expected Open VSX URL fallback, got %s", url)
+	}
+}
+
+func TestChooseVSCodeUpstreamInsiders(t *testing.T) {
+	variants := []VSCodeVariant{VariantMicrosoftInsiders}
+	url, regType := ChooseVSCodeUpstream(variants)
+	if regType != "marketplace" {
+		t.Errorf("expected marketplace for Insiders, got %s", regType)
+	}
+	if url != "https://marketplace.visualstudio.com" {
+		t.Errorf("expected marketplace URL for Insiders, got %s", url)
+	}
+}
+
+func TestReadExistingRegistryURLFromInstallDir(t *testing.T) {
+	home := t.TempDir()
+	installDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	os.MkdirAll(installDir, dirPerm) //nolint:errcheck
+	productJSON := `{"extensionsGallery":{"serviceUrl":"https://marketplace.visualstudio.com/_apis/public/gallery"}}`
+	os.WriteFile(filepath.Join(installDir, "product.json"), []byte(productJSON), cfgPerm) //nolint:errcheck
+
+	url := ReadExistingRegistryURL(home, testWindows)
+	if url != "https://marketplace.visualstudio.com/_apis/public/gallery" {
+		t.Errorf("expected marketplace gallery URL, got %q", url)
+	}
+}
+
+func TestReadExistingRegistryURLFromUserData(t *testing.T) {
+	home := t.TempDir()
+	userDataDir := filepath.Join(home, ".config", "Code")
+	os.MkdirAll(userDataDir, dirPerm) //nolint:errcheck
+	productJSON := `{"extensionsGallery":{"serviceUrl":"https://open-vsx.org/vscode/gallery"}}`
+	os.WriteFile(filepath.Join(userDataDir, "product.json"), []byte(productJSON), cfgPerm) //nolint:errcheck
+
+	url := ReadExistingRegistryURL(home, testLinux)
+	if url != "https://open-vsx.org/vscode/gallery" {
+		t.Errorf("expected Open VSX gallery URL, got %q", url)
+	}
+}
+
+func TestReadExistingRegistryURLNone(t *testing.T) {
+	url := ReadExistingRegistryURL(t.TempDir(), testLinux)
+	if url != "" {
+		t.Errorf("expected empty URL, got %q", url)
+	}
+}
+
+func TestPatchConfigForVSCodeMarketplace(t *testing.T) {
+	input := []byte("upstream:\n  url: \"https://open-vsx.org\"\n  timeout_seconds: 30\ncache:\n  ttl_seconds: 300\n")
+	result := PatchConfigForVSCode(input, "https://marketplace.visualstudio.com", "marketplace")
+	s := string(result)
+	if !strings.Contains(s, "marketplace.visualstudio.com") {
+		t.Errorf("URL not patched: %s", s)
+	}
+	if !strings.Contains(s, "marketplace") {
+		t.Errorf("registry_type not set: %s", s)
+	}
+	if strings.Contains(s, "open-vsx.org") {
+		t.Errorf("old URL still present: %s", s)
+	}
+}
+
+func TestPatchConfigForVSCodeWithExistingRegistryType(t *testing.T) {
+	input := []byte("upstream:\n  url: \"https://open-vsx.org\"\n  registry_type: \"openvsx\"\n  timeout_seconds: 30\ncache:\n  ttl_seconds: 300\n")
+	result := PatchConfigForVSCode(input, "https://marketplace.visualstudio.com", "marketplace")
+	s := string(result)
+	if !strings.Contains(s, "marketplace.visualstudio.com") {
+		t.Errorf("URL not patched: %s", s)
+	}
+	// Should not have duplicate registry_type.
+	if strings.Count(s, "registry_type") != 1 {
+		t.Errorf("registry_type should appear exactly once; got:\n%s", s)
+	}
+}
+
+func TestPatchConfigForVSCodeOpenVSX(t *testing.T) {
+	input := []byte("upstream:\n  url: \"https://open-vsx.org\"\n  timeout_seconds: 30\ncache:\n  ttl_seconds: 300\n")
+	result := PatchConfigForVSCode(input, "https://open-vsx.org", "openvsx")
+	s := string(result)
+	if !strings.Contains(s, "open-vsx.org") {
+		t.Errorf("URL lost: %s", s)
+	}
+	if !strings.Contains(s, "openvsx") {
+		t.Errorf("registry_type not set: %s", s)
+	}
+}
+
+func TestPatchConfigForVSCodeUpstreamAtEOF(t *testing.T) {
+	input := []byte("upstream:\n  url: \"https://open-vsx.org\"\n  timeout_seconds: 30")
+	result := PatchConfigForVSCode(input, "https://marketplace.visualstudio.com", "marketplace")
+	s := string(result)
+	if !strings.Contains(s, "marketplace.visualstudio.com") {
+		t.Errorf("URL not patched: %s", s)
+	}
+	if !strings.Contains(s, `registry_type: "marketplace"`) {
+		t.Errorf("registry_type not appended at EOF; got:\n%s", s)
+	}
+}
+
+func TestAutoConfigureVSCodeUpstreamMicrosoft(t *testing.T) {
+	home := t.TempDir()
+	// Create Microsoft VS Code user-data dir.
+	os.MkdirAll(filepath.Join(home, ".config", "Code"), dirPerm) //nolint:errcheck
+
+	input := []byte("upstream:\n  url: \"https://open-vsx.org\"\n  timeout_seconds: 30\ncache:\n  ttl_seconds: 300\n")
+	var buf bytes.Buffer
+	result := autoConfigureVSCodeUpstream(input, home, testLinux, &buf)
+	s := string(result)
+	if !strings.Contains(s, "marketplace.visualstudio.com") {
+		t.Errorf("expected marketplace URL, got:\n%s", s)
+	}
+	if !strings.Contains(buf.String(), "Detected") {
+		t.Errorf("expected detection message, got: %s", buf.String())
+	}
+}
+
+func TestAutoConfigureVSCodeUpstreamVSCodium(t *testing.T) {
+	home := t.TempDir()
+	// Only VSCodium installed.
+	os.MkdirAll(filepath.Join(home, ".config", "VSCodium"), dirPerm) //nolint:errcheck
+
+	input := []byte("upstream:\n  url: \"https://open-vsx.org\"\n  timeout_seconds: 30\ncache:\n  ttl_seconds: 300\n")
+	var buf bytes.Buffer
+	result := autoConfigureVSCodeUpstream(input, home, testLinux, &buf)
+	s := string(result)
+	if !strings.Contains(s, "open-vsx.org") {
+		t.Errorf("expected Open VSX URL, got:\n%s", s)
+	}
+}
+
+func TestAutoConfigureVSCodeUpstreamNoVariant(t *testing.T) {
+	home := t.TempDir()
+	input := []byte("upstream:\n  url: \"https://open-vsx.org\"\n  timeout_seconds: 30\ncache:\n  ttl_seconds: 300\n")
+	var buf bytes.Buffer
+	result := autoConfigureVSCodeUpstream(input, home, testLinux, &buf)
+	// Should keep Open VSX as default.
+	if !strings.Contains(string(result), "open-vsx.org") {
+		t.Errorf("expected Open VSX URL unchanged, got:\n%s", string(result))
+	}
+	if !strings.Contains(buf.String(), "No VS Code installation detected") {
+		t.Errorf("expected no-detection message, got: %s", buf.String())
+	}
+}
+
+func TestSetupFilesVsxAutoDetect(t *testing.T) {
+	home := t.TempDir()
+	// Create Microsoft VS Code user-data dir so auto-detect picks marketplace.
+	os.MkdirAll(filepath.Join(home, ".config", "Code"), dirPerm) //nolint:errcheck
+
+	p := ProxyInfo{
+		Ecosystem:  EcosystemVsx,
+		BinaryName: "vsx-bulwark",
+		Port:       18003,
+		ConfigData: []byte("upstream:\n  url: \"https://open-vsx.org\"\n  timeout_seconds: 30\ncache:\n  ttl_seconds: 300\n"),
+	}
+	exe := createDummyExe(t)
+	var buf bytes.Buffer
+	if err := SetupFiles(p, home, exe, testLinux, &buf); err != nil {
+		t.Fatalf("SetupFiles: %v", err)
+	}
+
+	paths := ResolvePaths(p, home, testLinux)
+	configData, err := os.ReadFile(paths.Config)
+	if err != nil {
+		t.Fatalf("reading config: %v", err)
+	}
+	s := string(configData)
+	if !strings.Contains(s, "marketplace.visualstudio.com") {
+		t.Errorf("config not patched with marketplace URL; got:\n%s", s)
+	}
+	if !strings.Contains(s, "marketplace") {
+		t.Errorf("config missing registry_type; got:\n%s", s)
+	}
+}
+
+// ─── TLS certificate generation ─────────────────────────────────────────────
+
+func TestGenerateSelfSignedCert(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "tls.crt")
+	keyPath := filepath.Join(dir, "tls.key")
+
+	if err := GenerateSelfSignedCert(certPath, keyPath); err != nil {
+		t.Fatalf("GenerateSelfSignedCert: %v", err)
+	}
+
+	// Verify cert file exists and is valid PEM.
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatalf("reading cert: %v", err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		t.Fatal("cert file does not contain a valid PEM CERTIFICATE block")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parsing certificate: %v", err)
+	}
+
+	// Check SANs.
+	if len(cert.DNSNames) == 0 || cert.DNSNames[0] != "localhost" {
+		t.Errorf("expected DNS SAN localhost, got %v", cert.DNSNames)
+	}
+	if len(cert.IPAddresses) < 2 {
+		t.Errorf("expected at least 2 IP SANs (127.0.0.1, ::1), got %v", cert.IPAddresses)
+	}
+
+	// Verify key file exists and is valid PEM.
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("reading key: %v", err)
+	}
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil || keyBlock.Type != "EC PRIVATE KEY" {
+		t.Fatal("key file does not contain a valid PEM EC PRIVATE KEY block")
+	}
+
+	// Verify the cert and key work together as a TLS pair.
+	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+		t.Fatalf("cert/key pair invalid: %v", err)
+	}
+}
+
+func TestGenerateSelfSignedCertBadPath(t *testing.T) {
+	if err := GenerateSelfSignedCert("/nonexistent/dir/tls.crt", "/nonexistent/dir/tls.key"); err == nil {
+		t.Fatal("expected error for nonexistent directory")
+	}
+}
+
+// ─── PatchConfigForTLS ──────────────────────────────────────────────────────
+
+func TestPatchConfigForTLS(t *testing.T) {
+	input := `server:
+  port: 18003
+  read_timeout_seconds: 30
+upstream:
+  url: "https://example.com"
+`
+	result := PatchConfigForTLS([]byte(input), "/home/user/.bulwark/vsx-bulwark/tls.crt", "/home/user/.bulwark/vsx-bulwark/tls.key")
+	s := string(result)
+
+	if !strings.Contains(s, `tls_cert_file: "/home/user/.bulwark/vsx-bulwark/tls.crt"`) {
+		t.Errorf("missing tls_cert_file; got:\n%s", s)
+	}
+	if !strings.Contains(s, `tls_key_file: "/home/user/.bulwark/vsx-bulwark/tls.key"`) {
+		t.Errorf("missing tls_key_file; got:\n%s", s)
+	}
+	// Original fields should still be present.
+	if !strings.Contains(s, "port: 18003") {
+		t.Errorf("original port missing; got:\n%s", s)
+	}
+}
+
+func TestPatchConfigForTLSOverridesExisting(t *testing.T) {
+	input := `server:
+  port: 18003
+  tls_cert_file: "/old/cert.pem"
+  tls_key_file: "/old/key.pem"
+upstream:
+  url: "https://example.com"
+`
+	result := PatchConfigForTLS([]byte(input), "/new/cert.pem", "/new/key.pem")
+	s := string(result)
+
+	if !strings.Contains(s, `tls_cert_file: "/new/cert.pem"`) {
+		t.Errorf("tls_cert_file not overridden; got:\n%s", s)
+	}
+	if !strings.Contains(s, `tls_key_file: "/new/key.pem"`) {
+		t.Errorf("tls_key_file not overridden; got:\n%s", s)
+	}
+	if strings.Contains(s, "/old/") {
+		t.Errorf("old paths still present; got:\n%s", s)
+	}
+}
+
+func TestPatchConfigForTLSServerAtEOF(t *testing.T) {
+	input := `upstream:
+  url: "https://example.com"
+server:
+  port: 18003`
+	result := PatchConfigForTLS([]byte(input), "/cert.pem", "/key.pem")
+	s := string(result)
+	if !strings.Contains(s, `tls_cert_file: "/cert.pem"`) {
+		t.Errorf("tls_cert_file not appended at EOF; got:\n%s", s)
+	}
+	if !strings.Contains(s, `tls_key_file: "/key.pem"`) {
+		t.Errorf("tls_key_file not appended at EOF; got:\n%s", s)
+	}
+}
+
+// ─── VsxGalleryProductJSON HTTPS ────────────────────────────────────────────
+
+func TestVsxGalleryProductJSONUsesHTTPS(t *testing.T) {
+	content := VsxGalleryProductJSON(18003)
+	if !strings.Contains(content, "https://localhost:18003") {
+		t.Errorf("product.json should use https://; got:\n%s", content)
+	}
+	if strings.Contains(content, "http://localhost:18003") {
+		t.Errorf("product.json should not use plain http://; got:\n%s", content)
+	}
+}
+
+func TestMergeGalleryJSONUsesHTTPS(t *testing.T) {
+	const srcJSON = `{
+  "extensionsGallery": {
+    "serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery"
+  }
+}`
+	patched, err := mergeGalleryJSON([]byte(srcJSON), 18003)
+	if err != nil {
+		t.Fatalf("mergeGalleryJSON: %v", err)
+	}
+	s := string(patched)
+	if !strings.Contains(s, "https://localhost:18003") {
+		t.Errorf("merged JSON should use https://; got:\n%s", s)
+	}
+	if strings.Contains(s, "http://localhost:18003") {
+		t.Errorf("merged JSON should not use plain http://; got:\n%s", s)
+	}
+}
+
+// ─── SetupFiles generates TLS cert for VSX ──────────────────────────────────
+
+func TestSetupFilesVsxGeneratesTLSCert(t *testing.T) {
+	home := t.TempDir()
+	exePath := filepath.Join(home, "fake-binary")
+	if err := os.WriteFile(exePath, []byte("binary"), binPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	p := ProxyInfo{
+		Ecosystem:  EcosystemVsx,
+		BinaryName: "vsx-bulwark",
+		Port:       18003,
+		ConfigData: []byte("server:\n  port: 18003\nupstream:\n  url: \"https://open-vsx.org\"\n  registry_type: \"openvsx\"\n"),
+	}
+
+	var buf bytes.Buffer
+	if err := SetupFiles(p, home, exePath, testLinux, &buf); err != nil {
+		t.Fatalf("SetupFiles: %v", err)
+	}
+
+	paths := ResolvePaths(p, home, testLinux)
+
+	// Verify TLS cert was generated.
+	certPath := filepath.Join(paths.EcoDir, "tls.crt")
+	keyPath := filepath.Join(paths.EcoDir, "tls.key")
+	if _, err := os.Stat(certPath); err != nil {
+		t.Errorf("TLS cert not generated: %v", err)
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Errorf("TLS key not generated: %v", err)
+	}
+
+	// Verify config was patched with TLS paths.
+	configData, err := os.ReadFile(paths.Config)
+	if err != nil {
+		t.Fatalf("reading config: %v", err)
+	}
+	s := string(configData)
+	if !strings.Contains(s, "tls_cert_file:") {
+		t.Errorf("config missing tls_cert_file; got:\n%s", s)
+	}
+	if !strings.Contains(s, "tls_key_file:") {
+		t.Errorf("config missing tls_key_file; got:\n%s", s)
+	}
+
+	// Verify product.json uses HTTPS.
+	for _, dir := range VsxConfigDirs(home, testLinux) {
+		data, err := os.ReadFile(filepath.Join(dir, "product.json"))
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(string(data), "https://localhost:18003") {
+			t.Errorf("product.json not using HTTPS; got:\n%s", string(data))
+		}
+	}
+
+	// Setup output should mention TLS.
+	if !strings.Contains(buf.String(), "TLS certificate generated") {
+		t.Errorf("expected TLS generation message in output; got:\n%s", buf.String())
+	}
+}
+
+// ─── VsxGalleryProductJSONURL ────────────────────────────────────────────────
+
+func TestVsxGalleryProductJSONURL(t *testing.T) {
+	content := VsxGalleryProductJSONURL("https://bulwark.corp.com:18003")
+	for _, want := range []string{
+		"https://bulwark.corp.com:18003",
+		"serviceUrl",
+		"itemUrl",
+		"resourceUrlTemplate",
+		"extensionUrlTemplate",
+		"_comment",
+		"_revert",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("VsxGalleryProductJSONURL missing %q; got:\n%s", want, content)
+		}
+	}
+	// Must not contain localhost.
+	if strings.Contains(content, "localhost") {
+		t.Errorf("VsxGalleryProductJSONURL should not mention localhost; got:\n%s", content)
+	}
+}
+
+// ─── SetupClientOnly ─────────────────────────────────────────────────────────
+
+func TestSetupClientOnly(t *testing.T) {
+	home := t.TempDir()
+	var buf bytes.Buffer
+
+	if err := SetupClientOnly("https://bulwark.corp.com:18003", home, testLinux, &buf); err != nil {
+		t.Fatalf("SetupClientOnly: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "[ok]") {
+		t.Errorf("expected ok output; got: %s", output)
+	}
+	if !strings.Contains(output, "bulwark.corp.com:18003") {
+		t.Errorf("expected server URL in output; got: %s", output)
+	}
+
+	// Verify product.json was written to all VS Code user-data dirs.
+	for _, dir := range VsxConfigDirs(home, testLinux) {
+		data, err := os.ReadFile(filepath.Join(dir, "product.json"))
+		if err != nil {
+			t.Errorf("missing product.json in %s: %v", dir, err)
+			continue
+		}
+		if !strings.Contains(string(data), "bulwark.corp.com:18003") {
+			t.Errorf("product.json in %s missing remote URL; got:\n%s", dir, string(data))
+		}
+		if strings.Contains(string(data), "localhost") {
+			t.Errorf("product.json in %s still mentions localhost; got:\n%s", dir, string(data))
+		}
+	}
+}
+
+func TestSetupClientOnlyDetectedTargetsOnly(t *testing.T) {
+	home := t.TempDir()
+	vscodiumDir := filepath.Join(home, ".config", "VSCodium")
+	if err := os.MkdirAll(vscodiumDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := SetupClientOnly("https://bulwark.corp.com:18003", home, testLinux, &buf); err != nil {
+		t.Fatalf("SetupClientOnly: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(vscodiumDir, "product.json"))
+	if err != nil {
+		t.Fatalf("reading VSCodium product.json: %v", err)
+	}
+	if !strings.Contains(string(data), "bulwark.corp.com:18003") {
+		t.Errorf("VSCodium product.json missing remote URL: %s", string(data))
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "Code", "product.json")); !os.IsNotExist(err) {
+		t.Errorf("Code product.json should not be written when only VSCodium is detected")
+	}
+	state := readVSXSetupStateForTest(t, home)
+	if len(state.Targets) != 1 || state.Targets[0].Name != VariantVSCodium.Name {
+		t.Errorf("saved state = %+v, want only %s", state.Targets, VariantVSCodium.Name)
+	}
+}
+
+func TestSetupClientOnlyTrailingSlash(t *testing.T) {
+	home := t.TempDir()
+	var buf bytes.Buffer
+
+	// URL with trailing slash should be normalised.
+	if err := SetupClientOnly("https://bulwark.corp.com:18003/", home, testLinux, &buf); err != nil {
+		t.Fatalf("SetupClientOnly: %v", err)
+	}
+
+	for _, dir := range VsxConfigDirs(home, testLinux) {
+		data, _ := os.ReadFile(filepath.Join(dir, "product.json"))
+		// The slash must be stripped so we don't get double-slashes in gallery URLs.
+		if strings.Contains(string(data), "//vscode/gallery") {
+			t.Errorf("double-slash in gallery URL after trailing-slash normalisation; got:\n%s", string(data))
+		}
+	}
+}
+
+func TestSetupClientOnlyHTTPRejected(t *testing.T) {
+	var buf bytes.Buffer
+	err := SetupClientOnly("http://bulwark.corp.com:18003", t.TempDir(), testLinux, &buf)
+	if err == nil {
+		t.Error("expected error for http URL")
+	}
+}
+
+func TestSetupClientOnlyBadURL(t *testing.T) {
+	var buf bytes.Buffer
+	// No host.
+	err := SetupClientOnly("https://", t.TempDir(), testLinux, &buf)
+	if err == nil {
+		t.Error("expected error for URL with no host")
+	}
+}
+
+func TestSetupClientOnlyWindowsInstallDirs(t *testing.T) {
+	home := t.TempDir()
+	// Create a fake VS Code installation on Windows.
+	installDir := filepath.Join(home, "AppData", "Local", "Programs", "Microsoft VS Code", "resources", "app")
+	if err := os.MkdirAll(installDir, dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "product.json"), []byte(testInstallProductJSON), cfgPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := SetupClientOnly("https://bulwark.corp.com:18003", home, testWindows, &buf); err != nil {
+		t.Fatalf("SetupClientOnly: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(installDir, "product.json"))
+	if err != nil {
+		t.Fatalf("reading install dir product.json: %v", err)
+	}
+	if !strings.Contains(string(data), "bulwark.corp.com:18003") {
+		t.Errorf("install dir product.json not patched with remote URL; got:\n%s", string(data))
+	}
+}
+
+// ─── Top-level Setup / Uninstall / SetupFilesOnly wrappers ───────────────────
+// These thin wrappers resolve the home directory and executable at runtime and
+// then delegate to the testable At-variants. Tests use a unique BinaryName
+// (prefixed with "test-") so they do not collide with a real installation, and
+// t.Cleanup removes all created assets immediately after each test.
+
+func TestSetupRunsAndCleansUp(t *testing.T) {
+	p := ProxyInfo{
+		Ecosystem:  EcosystemNpm,
+		BinaryName: "test-setup-bulwark",
+		Port:       19991,
+		ConfigData: []byte("listen_port: 19991\n"),
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	paths := ResolvePaths(p, home, runtime.GOOS)
+	t.Cleanup(func() {
+		os.RemoveAll(paths.EcoDir)
+		os.Remove(paths.Binary)
+	})
+	var buf bytes.Buffer
+	if err := Setup(p, &buf); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if _, err := os.Stat(paths.Config); err != nil {
+		t.Errorf("config file not created: %v", err)
+	}
+}
+
+func TestUninstallRunsClean(t *testing.T) {
+	p := ProxyInfo{
+		Ecosystem:  EcosystemNpm,
+		BinaryName: "test-uninstall-bulwark",
+		Port:       19992,
+		ConfigData: []byte("listen_port: 19992\n"),
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	paths := ResolvePaths(p, home, runtime.GOOS)
+	// Pre-install so Uninstall has something to remove.
+	if err := SetupFiles(p, home, os.Args[0], runtime.GOOS, io.Discard); err != nil {
+		t.Skipf("pre-install failed: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(paths.EcoDir); os.Remove(paths.Binary) })
+	var buf bytes.Buffer
+	if err := Uninstall(p, &buf); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+}
+
+func TestSetupFilesOnlyRunsClean(t *testing.T) {
+	p := ProxyInfo{
+		Ecosystem:  EcosystemNpm,
+		BinaryName: "test-filesonly-bulwark",
+		Port:       19993,
+		ConfigData: []byte("listen_port: 19993\n"),
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	paths := ResolvePaths(p, home, runtime.GOOS)
+	t.Cleanup(func() {
+		os.RemoveAll(paths.EcoDir)
+		os.Remove(paths.Binary)
+	})
+	var buf bytes.Buffer
+	if err := SetupFilesOnly(p, &buf); err != nil {
+		t.Fatalf("SetupFilesOnly: %v", err)
+	}
+	if _, err := os.Stat(paths.Config); err != nil {
+		t.Errorf("config file not created: %v", err)
 	}
 }

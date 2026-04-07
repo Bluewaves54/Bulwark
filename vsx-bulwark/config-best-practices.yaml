@@ -1,0 +1,197 @@
+# VSX Bulwark — Best Practices Configuration
+# Protects against malicious VS Code extensions including Glassworm-style attacks.
+# Blocks young extensions (7 days), pre-releases, typosquats, and known-malicious IDs.
+
+server:
+  port: 18003
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+  # TLS certificate and key for HTTPS. Required for VS Code's Content Security
+  # Policy which blocks plain HTTP connections from the extension gallery UI.
+  # Generated automatically by -setup; override for corporate deployments.
+  # tls_cert_file: ""
+  # tls_key_file: ""
+
+upstream:
+  # The upstream registry is selected automatically during setup (-setup flag)
+  # based on the VS Code variant detected on this machine:
+  #
+  #   Microsoft VS Code / VS Code Insiders
+  #     url: "https://marketplace.visualstudio.com"
+  #     registry_type: "marketplace"
+  #
+  #   VSCodium / Code - OSS
+  #     url: "https://open-vsx.org"
+  #     registry_type: "openvsx"
+  #
+  # The values below are the defaults used when no VS Code installation is
+  # detected (e.g. manual invocation without running -setup first).  Override
+  # them here if your variant was not detected, or if you are proxying to a
+  # private Open VSX / Marketplace-compatible registry.
+  url: "https://open-vsx.org"
+  registry_type: "openvsx"
+  timeout_seconds: 30
+  username: ""
+  password: ""
+  token: ""
+  tls:
+    insecure_skip_verify: false
+
+cache:
+  ttl_seconds: 300
+  max_size_mb: 256
+
+metrics:
+  enabled: true
+
+logging:
+  level: "info"
+  format: "text"
+  # file_path: "/var/log/bulwark/vsx.log"
+
+policy:
+  dry_run: false
+  fail_mode: "closed" # Block uninspected extension artifacts
+
+  trusted_packages:
+    # ── Microsoft first-party namespaces ─────────────────────────────────────
+    - "ms-python.*" # Python, Pylance, Debugpy
+    - "ms-vscode.*" # C/C++, Live Share, CMake, etc.
+    - "ms-vscode-remote.*" # Remote SSH, Dev Containers, WSL, Remote Explorer
+    - "ms-dotnettools.*" # C#, C# Dev Kit, .NET Install Tool
+    - "ms-azuretools.*" # Azure Functions, App Service, Containers, IoT
+    - "ms-kubernetes-tools.*" # Kubernetes, Draft, Bridge to Kubernetes
+    - "ms-toolsai.*" # Jupyter, Jupyter Keymap, Notebook Renderers
+    # ── GitHub ───────────────────────────────────────────────────────────────
+    - "github.*" # Copilot, Copilot Chat, Pull Requests, Actions, Codespaces
+    # ── Language / runtime ecosystem orgs ────────────────────────────────────
+    - "redhat.*" # Java, XML, YAML, Quarkus, OpenShift
+    - "golang.*" # Go (official Go team extension)
+    - "rust-lang.*" # rust-analyzer (official Rust Foundation)
+    # ── Major enterprise vendors ─────────────────────────────────────────────
+    - "hashicorp.*" # Terraform, HCL syntax
+    - "oracle.*" # Extension Pack for Java, MySQL Shell
+    - "vmware.*" # Spring Boot Dashboard, Spring Initializr, Tanzu
+    - "sonarsource.*" # SonarLint (static analysis / security)
+    # ── Well-known individual authors — kept specific, NOT wildcarded ─────────
+    # Individual developer accounts are not wildcarded: if their GitHub account
+    # were compromised, a wildcard would silently allow any new malicious extension.
+    # NOTE: Individual extensions are intentionally NOT listed as trusted so they
+    # remain subject to pre-release, age-quarantine, and other version-level rules.
+    # They are only protected in typosquat_check below.
+
+  rules:
+    - name: "block-pre-release"
+      action: "deny"
+      block_pre_release: true
+      reason: "Pre-release extension versions not permitted in production"
+
+    - name: "minimum-age-quarantine"
+      action: "deny"
+      min_package_age_days: 7
+      reason: "Extension must be 7+ days old; quarantine prevents zero-day exploits"
+
+    - name: "typosquat-detection"
+      action: "deny"
+      typosquat_check:
+        enabled: true
+        max_levenshtein_dist: 2
+        protected_packages:
+          - "ms-python.python"
+          - "ms-vscode.cpptools"
+          - "dbaeumer.vscode-eslint"
+          - "esbenp.prettier-vscode"
+          - "eamodio.gitlens"
+          - "golang.go"
+          - "rust-lang.rust-analyzer"
+          - "ms-dotnettools.csharp"
+          - "redhat.java"
+          - "github.copilot"
+      reason: "Extension name looks like a typosquat of a popular extension"
+
+    - name: "block-known-malicious"
+      action: "deny"
+      package_patterns:
+        # Glassworm campaign — 72 confirmed IOCs (Socket Research, March 13 2026)
+        # https://socket.dev/blog/open-vsx-transitive-glassworm-campaign
+        - "aadarkcode.*"
+        - "aligntool.*"
+        - "angular-studio.*"
+        - "awesome-codebase.*"
+        - "awesomeco.*"
+        - "bhbpbarn.*"
+        - "blockstoks.*"
+        - "brategmaqendaalar-studio.*"
+        - "codbroks.*"
+        - "codevunmis.*"
+        - "codwayexten.*"
+        - "cosmic-themes.*"
+        - "craz2team.*"
+        - "crotoapp.*"
+        - "cudra-production.*"
+        - "daeumer-web.*"
+        - "dark-code-studio.*"
+        - "densy-little-studio.*"
+        - "dep-labs-studio.*"
+        - "dev-studio-sense.*"
+        - "devmidu-studio.*"
+        - "dopbop-studio.*"
+        - "errlenscre.*"
+        - "exss-studio.*"
+        - "federicanc.*"
+        - "flutxvs.*"
+        - "gvotcha.*"
+        - "intellipro.*"
+        - "kharizma.*"
+        - "ko-zu-gun-studio.*"
+        - "kwitch-studio.*"
+        - "lavender-studio.*"
+        - "littensy-studio.*"
+        - "lyu-wen-studio-web-han.*"
+        - "markvalid.*"
+        - "mecreation-studio.*"
+        - "mswincx.*"
+        - "namopins.*"
+        - "oigotm.*"
+        - "otoboss.*"
+        - "ovixcode.*"
+        - "pessa07tm.*"
+        - "pfrfrprf.*"
+        - "potstok.*"
+        - "pretty-studio-advisor.*"
+        - "prismapp.*"
+        - "projmanager.*"
+        - "pubruncode.*"
+        - "pyflowpyr.*"
+        - "pyscopexte.*"
+        - "redcapcollective.*"
+        - "rubyideext.*"
+        - "runnerpost.*"
+        - "shinypy.*"
+        - "sol-studio.*"
+        - "ssgwysc.*"
+        - "studio-jjalaire-team.*"
+        - "studio-velte-distributor.*"
+        - "sun-shine-studio.*"
+        - "sxatvo.*"
+        - "tamokill12.*"
+        - "thing-mn.*"
+        - "tima-web-wang.*"
+        - "tokcodes.*"
+        - "toowespace.*"
+        - "treedotree.*"
+        - "tucyzirille-studio.*"
+        - "turbobase.*"
+        - "twilkbilk.*"
+        - "vce-brendan-studio-eich.*"
+        - "yamaprolas.*"
+        # Generic malicious extension name patterns
+        - "*-malicious-loader*"
+        - "*cryptominer*"
+        - "*credential-stealer*"
+      reason: "Known malicious or compromised VS Code extension (Glassworm campaign)"
+
+  defaults:
+    min_package_age_days: 3
+    block_pre_releases: false

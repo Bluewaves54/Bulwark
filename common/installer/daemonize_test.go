@@ -66,7 +66,16 @@ func TestDaemonizeCreatesLogFile(t *testing.T) {
 	// Daemonize will try to re-exec os.Executable. In test, that is the
 	// test binary itself, which will exit quickly with a non-zero code.
 	// We only verify it reaches the Start() call (creates the log file).
-	_, _ = Daemonize(p, home)
+	pid, _ := Daemonize(p, home)
+	// Kill the spawned process so it releases the log-file handle before
+	// t.TempDir cleanup runs (required on Windows where open handles
+	// prevent directory deletion).
+	if pid > 0 {
+		if proc, err := os.FindProcess(pid); err == nil {
+			_ = proc.Kill()
+			_, _ = proc.Wait()
+		}
+	}
 
 	logPath := filepath.Join(ecoDir, "daemon.log")
 	if _, err := os.Stat(logPath); err != nil {

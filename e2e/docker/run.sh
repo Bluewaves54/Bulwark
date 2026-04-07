@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Run Docker-based e2e tests in phases.
-# Usage: ./run.sh [--python-only | --node-only | --java-only] [--cleanup-images] [--cleanup-builder-cache]
+# Usage: ./run.sh [--python-only | --node-only | --java-only | --vsx-only] [--cleanup-images] [--cleanup-builder-cache]
 #
 # Prerequisites: Docker and Docker Compose must be installed.
 
@@ -20,6 +20,7 @@ while [ "$#" -gt 0 ]; do
         --python-only) TARGET="python" ;;
         --node-only)   TARGET="node" ;;
         --java-only)   TARGET="java" ;;
+        --vsx-only)    TARGET="vsx" ;;
         --cleanup-images) CLEANUP_IMAGES=true ;;
         --cleanup-builder-cache) CLEANUP_BUILDER_CACHE=true ;;
         --cleanup-all)
@@ -28,7 +29,7 @@ while [ "$#" -gt 0 ]; do
             ;;
         all|"") TARGET="all" ;;
         *)
-            echo "Usage: $0 [--python-only | --node-only | --java-only] [--cleanup-images] [--cleanup-builder-cache | --cleanup-all]"
+            echo "Usage: $0 [--python-only | --node-only | --java-only | --vsx-only] [--cleanup-images] [--cleanup-builder-cache | --cleanup-all]"
             exit 1
             ;;
     esac
@@ -383,6 +384,77 @@ run_java_phases() {
         -e MAVEN_REAL_LIFE_PROXY_URL=http://maven-proxy-real-life:8080
 }
 
+run_vsx_phases() {
+    echo ""
+    echo "--- Pre-building VSX test client image ---"
+    docker compose build test-vsx
+
+    run_phase "VSX baseline" "vsx-proxy" "test-vsx" \
+        -e E2E_PHASE=baseline \
+        -e VSX_PROXY_URL=http://vsx-proxy:18003 \
+        -e VSX_PROXY_DENY_URL= \
+        -e VSX_PROXY_PRERELEASE_URL= \
+        -e VSX_PROXY_PRERELEASE_PKG_URL= \
+        -e VSX_PROXY_DEFAULTS_URL= \
+        -e VSX_PROXY_REAL_LIFE_URL=
+
+    run_phase "VSX explicit-deny" "vsx-proxy-explicit-deny" "test-vsx" \
+        -e E2E_PHASE=explicit-deny \
+        -e VSX_PROXY_URL= \
+        -e VSX_PROXY_DENY_URL=http://vsx-proxy-explicit-deny:18003 \
+        -e VSX_PROXY_PRERELEASE_URL= \
+        -e VSX_PROXY_PRERELEASE_PKG_URL= \
+        -e VSX_PROXY_DEFAULTS_URL= \
+        -e VSX_PROXY_REAL_LIFE_URL=
+
+    run_phase "VSX prerelease" "vsx-proxy-block-prerelease" "test-vsx" \
+        -e E2E_PHASE=prerelease \
+        -e VSX_PROXY_URL= \
+        -e VSX_PROXY_DENY_URL= \
+        -e VSX_PROXY_PRERELEASE_URL=http://vsx-proxy-block-prerelease:18003 \
+        -e VSX_PROXY_PRERELEASE_PKG_URL= \
+        -e VSX_PROXY_DEFAULTS_URL= \
+        -e VSX_PROXY_REAL_LIFE_URL=
+
+    run_phase "VSX prerelease-pkg" "vsx-proxy-block-prerelease-pkg" "test-vsx" \
+        -e E2E_PHASE=prerelease-pkg \
+        -e VSX_PROXY_URL= \
+        -e VSX_PROXY_DENY_URL= \
+        -e VSX_PROXY_PRERELEASE_URL= \
+        -e VSX_PROXY_PRERELEASE_PKG_URL=http://vsx-proxy-block-prerelease-pkg:18003 \
+        -e VSX_PROXY_DEFAULTS_URL= \
+        -e VSX_PROXY_REAL_LIFE_URL=
+
+    run_phase "VSX global-defaults" "vsx-proxy-global-defaults" "test-vsx" \
+        -e E2E_PHASE=global-defaults \
+        -e VSX_PROXY_URL= \
+        -e VSX_PROXY_DENY_URL= \
+        -e VSX_PROXY_PRERELEASE_URL= \
+        -e VSX_PROXY_PRERELEASE_PKG_URL= \
+        -e VSX_PROXY_DEFAULTS_URL=http://vsx-proxy-global-defaults:18003 \
+        -e VSX_PROXY_REAL_LIFE_URL=
+
+    run_phase "VSX real-life" "vsx-proxy-real-life" "test-vsx" \
+        -e E2E_PHASE=real-life \
+        -e VSX_PROXY_URL= \
+        -e VSX_PROXY_DENY_URL= \
+        -e VSX_PROXY_PRERELEASE_URL= \
+        -e VSX_PROXY_PRERELEASE_PKG_URL= \
+        -e VSX_PROXY_DEFAULTS_URL= \
+        -e VSX_PROXY_REAL_LIFE_URL=http://vsx-proxy-real-life:18003 \
+        -e VSX_PROXY_BEST_PRACTICES_URL=
+
+    run_phase "VSX best-practices" "vsx-proxy-best-practices" "test-vsx" \
+        -e E2E_PHASE=best-practices \
+        -e VSX_PROXY_URL= \
+        -e VSX_PROXY_DENY_URL= \
+        -e VSX_PROXY_PRERELEASE_URL= \
+        -e VSX_PROXY_PRERELEASE_PKG_URL= \
+        -e VSX_PROXY_DEFAULTS_URL= \
+        -e VSX_PROXY_REAL_LIFE_URL= \
+        -e VSX_PROXY_BEST_PRACTICES_URL=http://vsx-proxy-best-practices:18003
+}
+
 echo "============================================"
 echo " Bulwark E2E Tests (Docker)"
 echo "============================================"
@@ -395,10 +467,12 @@ case "${TARGET}" in
     python) run_python_phases ;;
     node)   run_node_phases ;;
     java)   run_java_phases ;;
+    vsx)    run_vsx_phases ;;
     all)
         run_python_phases
         run_node_phases
         run_java_phases
+        run_vsx_phases
         ;;
 esac
 EXIT_CODE=$?
